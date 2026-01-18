@@ -140,3 +140,7 @@ export const ALL_LESSONS: Lesson[] = [
 export function getLessonById(id: string): Lesson | undefined {
   return ALL_LESSONS.find((lesson) => lesson.id === id);
 }
+
+export function getLessonsByAuthor(authorName: string): Lesson[] {
+  return ALL_LESSONS.filter((lesson) => lesson.author === authorName);
+}

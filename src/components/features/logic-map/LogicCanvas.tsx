@@ -15,14 +15,20 @@ import ReactFlow, {
   Node,
   useReactFlow,
   ReactFlowProvider,
+  getRectOfNodes,
+  getTransformForBounds,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Plus, Send, Cloud, Loader2, Clock, CheckCircle, AlertCircle, Hexagon, Circle, RotateCcw } from 'lucide-react'; 
 import { GamificationEngine } from '@/lib/engines/GamificationEngine';
 import { useUserStore } from '@/store/user-store';
 import { AssetStatus } from '@/lib/types/gamification';
-import TemplateSelector from './TemplateSelector'; // 👈 引入選擇器
+import TemplateSelector from './TemplateSelector';
 import { LogicTemplate } from '@/lib/data/logic-templates';
+import { toPng } from 'html-to-image'; // 使用 reactflow 推薦的截圖工具
+
+// 📦 我們需要安裝 html-to-image，如果沒有請執行 npm install html-to-image
+// 如果不想安裝，可以用 html2canvas-pro 替代，但 toPng 對 Canvas 支援較好
 
 interface LogicCanvasProps {
   lessonId: string;
@@ -32,15 +38,12 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   const { name, unlockedSkills } = useUserStore(); 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const { setViewport, toObject } = useReactFlow();
+  const { setViewport, toObject, getNodes } = useReactFlow();
 
-  // 狀態管理
   const [status, setStatus] = useState<AssetStatus>('draft');
   const [feedback, setFeedback] = useState<string | undefined>(undefined);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const hasLoaded = useRef(false);
-
-  // 🔥 新增：是否顯示模板選擇器
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
 
   // Modal
@@ -51,10 +54,35 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   const isLocked = status === 'pending' || status === 'verified';
   const assetId = `logic-${lessonId}`;
   const STORAGE_KEY = `logic-map-${lessonId}`;
+  const SNAPSHOT_KEY = `logic-map-img-${lessonId}`; // 🔥 圖片儲存 Key
 
   const hasAdvancedLogic = unlockedSkills.includes('logic-2');
 
-  // 初始化：檢查是否有存檔
+  // 🔥 輔助函式：截圖並存檔
+  const captureAndSave = useCallback(async () => {
+    // 取得畫布元素 (.react-flow__viewport)
+    const viewportEl = document.querySelector('.react-flow__viewport') as HTMLElement;
+    if (!viewportEl) return;
+
+    try {
+      // 為了截取完整圖形，我們暫時計算邊界 (Optional)
+      // 這裡直接截取當前視口比較快
+      const dataUrl = await toPng(document.querySelector('.react-flow') as HTMLElement, {
+        backgroundColor: '#ffffff',
+        width: 800, // 強制寬度，避免圖片太大
+        height: 600,
+        style: {
+            transform: 'scale(1)', // 避免縮放偏移
+        }
+      });
+      localStorage.setItem(SNAPSHOT_KEY, dataUrl);
+      console.log('邏輯圖快照已儲存');
+    } catch (err) {
+      console.error('截圖失敗', err);
+    }
+  }, [SNAPSHOT_KEY]);
+
+  // 初始化 (保持不變)
   useEffect(() => {
     let localData: any = null;
     const savedString = localStorage.getItem(STORAGE_KEY);
@@ -69,7 +97,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
     let finalFeedback = undefined;
     let finalViewport = { x: 0, y: 0, zoom: 1 };
     
-    // 判斷是否需要載入資料
     let hasData = false;
 
     if (remoteAsset) {
@@ -105,7 +132,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
     setFeedback(finalFeedback);
     if (finalViewport) setViewport(finalViewport);
     
-    // 🔥 如果完全沒有資料，顯示模板選擇器
     if (!hasData) {
         setShowTemplateSelector(true);
     }
@@ -114,9 +140,9 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   }, [lessonId, name, setNodes, setEdges, setViewport, assetId, STORAGE_KEY]);
 
 
-  // 自動存檔
+  // 自動存檔 + 自動截圖
   useEffect(() => {
-    if (!hasLoaded.current || isLocked || showTemplateSelector) return; // 選擇模板時不存檔
+    if (!hasLoaded.current || isLocked || showTemplateSelector) return;
     setSaveStatus('saving');
     const timer = setTimeout(() => {
       const flowData = {
@@ -127,18 +153,26 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
         feedback
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(flowData));
+      
+      // 🔥 存檔時順便截圖 (為了效能，可以不需要每次都截，這裡為了展示先每次都截)
+      captureAndSave();
+
       setSaveStatus('saved');
-    }, 1000);
+    }, 2000); // 延長到 2秒，避免截圖太頻繁卡頓
     return () => clearTimeout(timer);
-  }, [nodes, edges, status, feedback, isLocked, toObject, STORAGE_KEY, showTemplateSelector]);
+  }, [nodes, edges, status, feedback, isLocked, toObject, STORAGE_KEY, showTemplateSelector, captureAndSave]);
 
 
   // 提交
-  const onSubmit = useCallback(() => {
+  const onSubmit = useCallback(async () => {
     if (nodes.length < 3) {
       alert('⚠️ 結構太簡單了！至少需要 3 個節點才能提交喔。');
       return;
     }
+    
+    // 🔥 提交前強制截圖一次
+    await captureAndSave();
+
     const fullData = { nodes, edges, viewport: toObject().viewport };
     const localPayload = { ...fullData, status: 'pending', feedback: undefined };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(localPayload));
@@ -155,26 +189,26 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
     });
 
     alert('🚀 已提交邏輯圖！(獲得 +10 XP)');
-  }, [nodes, edges, lessonId, toObject, name, assetId, STORAGE_KEY]);
+  }, [nodes, edges, lessonId, toObject, name, assetId, STORAGE_KEY, captureAndSave]);
 
 
-  // 🔥 處理模板選擇
+  // 模板選擇
   const handleTemplateSelect = (template: LogicTemplate) => {
       setNodes(template.nodes);
       setEdges(template.edges);
-      setShowTemplateSelector(false); // 關閉選擇器
-      setViewport({ x: 0, y: 0, zoom: 1 }); // 重置視角
+      setShowTemplateSelector(false);
+      setViewport({ x: 0, y: 0, zoom: 1 });
   };
 
-  // 🔥 重新選擇模板 (清空畫布)
   const handleReset = () => {
       if(confirm('確定要清空畫布並重新選擇模板嗎？\n這將會刪除目前的進度！')) {
           localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(SNAPSHOT_KEY); // 清除截圖
           setShowTemplateSelector(true);
       }
   };
 
-  // 互動
+  // ... (其餘互動邏輯保持不變)
   const onConnect = useCallback(
     (params: Connection | Edge) => !isLocked && setEdges((eds) => addEdge(params, eds)),
     [setEdges, isLocked]
@@ -182,33 +216,15 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
 
   const onAddNode = useCallback((type: 'default' | 'rebuttal' | 'evidence' = 'default') => {
     if (isLocked) return;
-
     let style = { background: '#ffffff', border: '1px solid #cbd5e1' };
     let label = '新觀點';
-
     if (type === 'rebuttal') {
-        style = { 
-            background: '#fee2e2', 
-            border: '2px solid #ef4444',
-            // @ts-ignore
-            borderRadius: '4px' 
-        };
+        style = { background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '4px' } as any;
         label = '反駁/轉折';
     } else if (type === 'evidence') {
-        style = { 
-            background: '#dcfce7', 
-            border: '2px solid #22c55e',
-            // @ts-ignore
-            borderRadius: '50%',
-            width: '100px',
-            height: '100px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-        };
+        style = { background: '#dcfce7', border: '2px solid #22c55e', borderRadius: '50%', width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center' } as any;
         label = '佐證';
     }
-
     const newNode = {
       id: Math.random().toString(36).substr(2, 5),
       position: { x: Math.random() * 400 + 50, y: Math.random() * 300 + 50 }, 
@@ -240,8 +256,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   return (
     <>
       <div className="w-full h-full bg-white relative group">
-        
-        {/* 🔥 顯示模板選擇器 */}
         {showTemplateSelector && <TemplateSelector onSelect={handleTemplateSelect} />}
 
         <ReactFlow
@@ -261,7 +275,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
           <MiniMap nodeColor="#e2e8f0" style={{ height: 100 }} />
 
           <Panel position="top-right" className="flex flex-col gap-2 items-end">
-             {/* 狀態列 */}
              <div className="bg-white/80 backdrop-blur px-3 py-1.5 rounded-full shadow-sm border border-slate-100 flex items-center gap-2 text-xs font-medium">
                 {saveStatus === 'saving' ? (
                     <>
@@ -283,7 +296,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
 
                 {!isLocked && (
                     <>
-                    {/* 按鈕工具列 */}
                     <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
                         <button onClick={() => onAddNode('default')} className="flex items-center gap-1 px-3 py-1.5 bg-white text-slate-700 text-sm font-bold rounded shadow-sm hover:text-indigo-600 transition" title="一般觀點">
                             <Plus className="w-4 h-4" /> 觀點
@@ -303,7 +315,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
 
                     <div className="w-px h-6 bg-slate-200 mx-1"></div>
 
-                    {/* 🔥 重置按鈕 */}
                     <button onClick={handleReset} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition" title="重新選擇模板">
                         <RotateCcw className="w-4 h-4" />
                     </button>
