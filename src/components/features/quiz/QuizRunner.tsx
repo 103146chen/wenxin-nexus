@@ -3,50 +3,63 @@
 import { Lesson, SingleChoiceQuestion, MultipleChoiceQuestion, ShortAnswerQuestion } from "@/lib/data/lessons";
 import { useUserStore } from "@/store/user-store";
 import { GamificationEngine } from "@/lib/engines/GamificationEngine";
-import { useState, useEffect, useMemo } from "react";
-import { ChevronLeft, Zap, Key, CheckCircle, XCircle, Award, RotateCcw, HelpCircle, BookOpen, Send } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { ChevronLeft, Zap, Key, CheckCircle, XCircle, Award, RotateCcw, HelpCircle, BookOpen, Send, Eye } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-// 定義扁平化後的題目介面 (不包含 GroupQuestion，因為已經被拆解了)
 type PlayableQuestion = (SingleChoiceQuestion | MultipleChoiceQuestion | ShortAnswerQuestion) & {
   groupContent?: string;
   groupTitle?: string;
 };
 
+type QuizMode = 'normal' | 'correction' | 'review';
+
 export default function QuizRunner({ lesson }: { lesson: Lesson }) {
   const router = useRouter();
   const { name, unlockedSkills, activateSkill, skillCooldowns, addXp, addCoins, quizRecords, updateQuizRecord, correctMistake } = useUserStore();
   
-  const record = quizRecords[lesson.id];
-  const isCorrectionMode = record?.isFinished && record.wrongQuestionIds.length > 0;
-  
-  // 扁平化題目列表
-  const allPlayableQuestions = useMemo(() => {
-    const flat: PlayableQuestion[] = [];
+  // 🔥 1. 抽離邏輯：計算目前的模式與題目列表
+  const calculateSession = useCallback(() => {
+    // A. 題目扁平化
+    const flatQuestions: PlayableQuestion[] = [];
     lesson.quizzes.forEach(q => {
       if (q.type === 'group') {
         q.subQuestions.forEach(sub => {
-          flat.push({
+          flatQuestions.push({
             ...sub,
             groupContent: q.groupContent,
             groupTitle: q.question
           });
         });
       } else {
-        flat.push(q);
+        flatQuestions.push(q);
       }
     });
-    return flat;
-  }, [lesson]);
 
-  // 根據模式篩選題目
-  const questionsToPlay = useMemo(() => {
-    if (isCorrectionMode) {
-      return allPlayableQuestions.filter(q => record.wrongQuestionIds.includes(q.id));
+    // B. 從 Store 獲取最新紀錄
+    // 注意：這裡是直接從 hook 拿到的 quizRecords，它是響應式的
+    const record = useUserStore.getState().quizRecords[lesson.id];
+
+    // 情境 1: 沒紀錄或未完成 -> Normal
+    if (!record || !record.isFinished) {
+        return { mode: 'normal' as QuizMode, questions: flatQuestions };
     }
-    return allPlayableQuestions;
-  }, [allPlayableQuestions, isCorrectionMode, record]);
+
+    // 情境 2: 有錯題 -> Correction
+    if (record.wrongQuestionIds.length > 0) {
+        const wrongQs = flatQuestions.filter(q => record.wrongQuestionIds.includes(q.id));
+        return { mode: 'correction' as QuizMode, questions: wrongQs };
+    }
+
+    // 情境 3: 無錯題 -> Review
+    return { mode: 'review' as QuizMode, questions: flatQuestions };
+  }, [lesson, quizRecords]); // 依賴 quizRecords，確保資料更新時邏輯正確
+
+  // 🔥 2. 使用 lazy initialization 設定初始狀態
+  const [session, setSession] = useState<{ mode: QuizMode; questions: PlayableQuestion[] }>(() => calculateSession());
+
+  const { mode, questions: questionsToPlay } = session;
 
   // 狀態管理
   const [currentQIndex, setCurrentQIndex] = useState(0);
@@ -63,10 +76,10 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
   const [removedOptions, setRemovedOptions] = useState<number[]>([]);
   const [showHint, setShowHint] = useState(false);
 
+  // 防呆：如果 questionsToPlay 為空 (例如全部訂正完了)，顯示完成狀態
   const currentQuestion = questionsToPlay[currentQIndex];
   const totalQuestions = questionsToPlay.length;
 
-  // 重置題目狀態
   useEffect(() => {
       setSelectedIndices([]);
       setShortAnswerText("");
@@ -74,7 +87,21 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       setIsCorrect(false);
       setRemovedOptions([]);
       setShowHint(false);
-  }, [currentQIndex, isCorrectionMode]);
+  }, [currentQIndex, session]); // session 改變時也要重置
+
+  // 🔥 3. 處理「重新開始 / 立即訂正」的邏輯
+  const handleRestart = () => {
+      // 重新計算 Session (這時會讀到最新的錯題紀錄)
+      const newSession = calculateSession();
+      setSession(newSession);
+      
+      // 重置所有狀態
+      setCurrentQIndex(0);
+      setScore(0);
+      setWrongIds([]);
+      setIsFinished(false);
+      setIsAnswered(false);
+  };
 
   // 技能 1: 刪去法
   const handleUseZap = () => {
@@ -145,15 +172,15 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       setIsCorrect(correct);
 
       if (correct) {
-          if (isCorrectionMode) {
+          if (mode === 'correction') {
               addCoins(5);
               addXp(10);
               correctMistake(lesson.id, currentQuestion.id);
-          } else {
+          } else if (mode === 'normal') {
               setScore(s => s + 1);
           }
       } else {
-          if (!isCorrectionMode) {
+          if (mode === 'normal') {
               setWrongIds(prev => [...prev, currentQuestion.id]);
           }
       }
@@ -163,11 +190,17 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
     if (currentQIndex < totalQuestions - 1) {
         setCurrentQIndex(prev => prev + 1);
     } else {
-        if (!isCorrectionMode) {
-             updateQuizRecord(lesson.id, score + (isCorrect ? 1 : 0), wrongIds, true);
+        if (mode === 'normal') {
              const finalScore = score + (isCorrect ? 1 : 0);
-             addXp(finalScore * 50);
-             addCoins(finalScore * 10);
+             const finalWrongIds = [...wrongIds];
+             if (!isCorrect) finalWrongIds.push(currentQuestion.id);
+
+             updateQuizRecord(lesson.id, finalScore, finalWrongIds, true);
+             
+             const xpReward = finalScore * 50;
+             const coinReward = finalScore * 10;
+             addXp(xpReward);
+             addCoins(coinReward);
         }
         setIsFinished(true);
     }
@@ -175,33 +208,79 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
 
   // --- 畫面渲染 ---
 
-  // 1. 完成畫面
   if (isFinished) {
-      if (isCorrectionMode) {
+      // 檢查是否還有新的錯題 (用於決定是否顯示「立即訂正」按鈕)
+      // 這邊直接讀取 Store 最準確
+      const currentRecord = useUserStore.getState().quizRecords[lesson.id];
+      const hasWrongsLeft = currentRecord?.wrongQuestionIds?.length > 0;
+
+      if (mode === 'correction') {
           return (
             <div className="flex min-h-screen bg-slate-50">
                 <div className="flex-1 p-12 flex items-center justify-center">
-                    <div className="bg-white p-10 rounded-3xl shadow-xl text-center max-w-lg w-full">
+                    <div className="bg-white p-10 rounded-3xl shadow-xl text-center max-w-lg w-full animate-in zoom-in-95">
                         <CheckCircle className="w-24 h-24 text-green-500 mx-auto mb-6" />
                         <h2 className="text-3xl font-bold text-slate-800 mb-2">訂正完成！</h2>
-                        <p className="text-slate-500 mb-8">觀念釐清了，下次考試一定沒問題。</p>
-                        <Link href="/quiz" className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700">返回大廳</Link>
+                        <p className="text-slate-500 mb-8">
+                            {hasWrongsLeft 
+                                ? "還有部分題目尚未訂正，要繼續嗎？" 
+                                : "太棒了！所有錯題都已訂正完畢。"}
+                        </p>
+                        <div className="flex gap-3 justify-center">
+                            <Link href="/quiz" className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 transition">
+                                返回大廳
+                            </Link>
+                            {hasWrongsLeft && (
+                                <button onClick={handleRestart} className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition flex items-center gap-2">
+                                    <RotateCcw className="w-4 h-4" /> 繼續訂正
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
           );
       }
+      
+      const isReview = mode === 'review';
       return (
         <div className="flex min-h-screen bg-slate-50">
             <div className="flex-1 p-12 flex items-center justify-center">
-                <div className="bg-white p-10 rounded-3xl shadow-xl text-center max-w-lg w-full">
-                    <Award className="w-24 h-24 text-yellow-400 mx-auto mb-6" />
-                    <h2 className="text-3xl font-bold text-slate-800 mb-2">測驗完成！</h2>
-                    <p className="text-slate-500 mb-8">恭喜你完成了{lesson.title}的測驗。</p>
-                    <div className="flex gap-3 justify-center">
-                        <Link href="/quiz" className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">返回大廳</Link>
-                        {wrongIds.length > 0 && (
-                            <button onClick={() => window.location.reload()} className="px-6 py-3 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 flex items-center gap-2">
+                <div className="bg-white p-10 rounded-3xl shadow-xl text-center max-w-lg w-full animate-in zoom-in-95">
+                    {isReview ? (
+                        <Eye className="w-24 h-24 text-slate-400 mx-auto mb-6" />
+                    ) : (
+                        <Award className="w-24 h-24 text-yellow-400 mx-auto mb-6" />
+                    )}
+                    
+                    <h2 className="text-3xl font-bold text-slate-800 mb-2">
+                        {isReview ? '複習結束' : '測驗完成！'}
+                    </h2>
+                    
+                    {!isReview && (
+                        <div className="flex justify-center gap-8 mb-8 mt-6">
+                            <div className="text-center">
+                                <div className="text-4xl font-bold text-indigo-600">
+                                    {score + (isCorrect ? 1 : 0)} / {totalQuestions}
+                                </div>
+                                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">得分</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-4xl font-bold text-emerald-600">
+                                    +{(score + (isCorrect ? 1 : 0)) * 50}
+                                </div>
+                                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">獲得 XP</div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex gap-3 justify-center mt-8">
+                        <Link href="/quiz" className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 transition">
+                            返回大廳
+                        </Link>
+                        {/* 🔥 修正：使用 handleRestart 而不是 reload */}
+                        {hasWrongsLeft && (
+                            <button onClick={handleRestart} className="px-6 py-3 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 flex items-center gap-2 transition">
                                 <RotateCcw className="w-4 h-4" /> 立即訂正錯題
                             </button>
                         )}
@@ -212,42 +291,47 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       );
   }
 
-  // 2. 空狀態
+  // 空狀態 (例如訂正模式沒有題目)
   if (!currentQuestion) {
       return (
           <div className="flex min-h-screen bg-slate-50">
             <div className="flex-1 p-12 flex items-center justify-center">
                 <div className="text-center">
-                    <h2 className="text-2xl font-bold text-slate-800 mb-2">準備就緒</h2>
-                    <p className="text-slate-500">尚無錯題紀錄，或已全數訂正完畢。</p>
-                    <Link href="/quiz" className="mt-4 inline-block text-indigo-600 underline">回上一頁</Link>
+                    <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold text-slate-800 mb-2">恭喜！</h2>
+                    <p className="text-slate-500">目前沒有需要訂正的題目。</p>
+                    <Link href="/quiz" className="mt-6 inline-block px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700">
+                        回上一頁
+                    </Link>
                 </div>
             </div>
           </div>
       )
   }
 
-  // 3. 測驗進行中
   return (
     <div className="flex min-h-screen bg-slate-50">
       <div className="flex-1 p-8 flex flex-col h-screen">
+        {/* Top Bar */}
         <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-4">
                 <Link href="/quiz" className="p-2 hover:bg-slate-200 rounded-full transition text-slate-500"><ChevronLeft className="w-5 h-5" /></Link>
                 <div>
                     <h1 className="text-xl font-bold text-slate-800">
-                        {isCorrectionMode ? `📝 錯題訂正：${lesson.title}` : `${lesson.title} 隨堂測驗`}
+                        {mode === 'correction' ? `📝 錯題訂正：${lesson.title}` : mode === 'review' ? `👀 複習模式：${lesson.title}` : `${lesson.title} 隨堂測驗`}
                     </h1>
                     <p className="text-xs text-slate-500">Question {currentQIndex + 1} of {totalQuestions}</p>
                 </div>
             </div>
-            {isCorrectionMode && <div className="text-xs font-bold text-rose-600 bg-rose-50 px-3 py-1 rounded-full">訂正模式</div>}
+            
+            {mode === 'correction' && <div className="text-xs font-bold text-rose-600 bg-rose-50 px-3 py-1 rounded-full flex items-center gap-1"><RotateCcw className="w-3 h-3"/> 訂正模式</div>}
+            {mode === 'review' && <div className="text-xs font-bold text-slate-600 bg-slate-200 px-3 py-1 rounded-full flex items-center gap-1"><Eye className="w-3 h-3"/> 複習模式 (不計分)</div>}
         </div>
 
+        {/* Content */}
         <div className="flex-1 max-w-3xl mx-auto w-full flex flex-col justify-center pb-20">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-6 relative overflow-hidden">
                 
-                {/* 題組文章渲染 */}
                 {currentQuestion.groupContent && (
                     <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100 text-slate-700 font-serif leading-loose relative">
                         <div className="absolute top-0 right-0 bg-indigo-100 text-indigo-600 text-[10px] font-bold px-2 py-1 rounded-bl-lg">題組文章</div>
@@ -259,7 +343,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                     </div>
                 )}
 
-                {/* 題目 */}
                 <h2 className="text-2xl font-bold text-slate-800 mb-8 leading-relaxed">
                     {currentQuestion.question}
                     {currentQuestion.type === 'multiple' && <span className="ml-2 text-sm font-normal text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full align-middle">多選</span>}
@@ -267,7 +350,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                 </h2>
 
                 <div className="space-y-3">
-                    {/* 單選 / 多選 */}
                     {(currentQuestion.type === 'single' || currentQuestion.type === 'multiple') && 
                       currentQuestion.options.map((opt, idx) => {
                         const isRemoved = removedOptions.includes(idx);
@@ -312,7 +394,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                         );
                     })}
 
-                    {/* 簡答題 */}
                     {currentQuestion.type === 'short' && (
                         <div className="space-y-4">
                             <textarea
@@ -332,27 +413,25 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                     )}
                 </div>
 
-                {/* 思考導引 / 詳解 */}
-                {(showHint || (isCorrectionMode && !isCorrect && isAnswered)) && (
+                {(showHint || (mode === 'correction' && !isCorrect && isAnswered)) && (
                     <div className="mt-6 p-4 bg-amber-50 text-amber-900 rounded-xl text-sm border border-amber-100 animate-in fade-in slide-in-from-top-2">
                         <div className="font-bold flex items-center gap-2 mb-1">
                             <HelpCircle className="w-4 h-4" /> 
-                            {isCorrectionMode ? '思考導引 (Thinking Guidance)' : '詳解提示'}
+                            {mode === 'correction' ? '思考導引 (Thinking Guidance)' : '詳解提示'}
                         </div>
-                        {isCorrectionMode ? currentQuestion.guidance : currentQuestion.explanation}
+                        {mode === 'correction' ? currentQuestion.guidance : currentQuestion.explanation}
                     </div>
                 )}
             </div>
 
             <div className="flex justify-between items-center">
                 <div className="flex gap-3">
-                    {/* 技能按鈕 */}
-                    {unlockedSkills.includes('quiz-1') && currentQuestion.type === 'single' && !isAnswered && (
+                    {unlockedSkills.includes('quiz-1') && currentQuestion.type === 'single' && !isAnswered && mode === 'normal' && (
                         <button onClick={handleUseZap} className="w-12 h-12 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-yellow-500 hover:scale-110 transition" title="發動技能：靈光">
                             <Zap className="w-6 h-6 fill-current" />
                         </button>
                     )}
-                     {unlockedSkills.includes('quiz-2') && !isAnswered && !showHint && (
+                     {unlockedSkills.includes('quiz-2') && !isAnswered && !showHint && mode === 'normal' && (
                         <button onClick={handleUseHint} className="w-12 h-12 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-purple-500 hover:scale-110 transition" title="發動技能：天機">
                             <Key className="w-6 h-6" />
                         </button>
@@ -361,12 +440,11 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
 
                 <button 
                     onClick={handleSubmit}
-                    // 🔥 修正了這裡的邏輯：移除了 currentQuestion.type !== 'group'
                     disabled={!isAnswered && selectedIndices.length === 0 && !shortAnswerText}
                     className="px-8 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-indigo-600 transition shadow-lg animate-in fade-in slide-in-from-right-5 flex items-center gap-2"
                 >
                     {isAnswered 
-                        ? (currentQIndex < totalQuestions - 1 ? '下一題' : (isCorrectionMode ? '完成訂正' : '查看結果')) 
+                        ? (currentQIndex < totalQuestions - 1 ? '下一題' : (mode === 'correction' ? '完成訂正' : '查看結果')) 
                         : (currentQuestion.type === 'short' ? '提交簡答' : '確認答案')
                     }
                     {!isAnswered && <Send className="w-4 h-4"/>}
