@@ -15,8 +15,6 @@ import ReactFlow, {
   Node,
   useReactFlow,
   ReactFlowProvider,
-  getRectOfNodes,
-  getTransformForBounds,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Plus, Send, Cloud, Loader2, Clock, CheckCircle, AlertCircle, Hexagon, Circle, RotateCcw } from 'lucide-react'; 
@@ -25,10 +23,7 @@ import { useUserStore } from '@/store/user-store';
 import { AssetStatus } from '@/lib/types/gamification';
 import TemplateSelector from './TemplateSelector';
 import { LogicTemplate } from '@/lib/data/logic-templates';
-import { toPng } from 'html-to-image'; // 使用 reactflow 推薦的截圖工具
-
-// 📦 我們需要安裝 html-to-image，如果沒有請執行 npm install html-to-image
-// 如果不想安裝，可以用 html2canvas-pro 替代，但 toPng 對 Canvas 支援較好
+import { toPng } from 'html-to-image';
 
 interface LogicCanvasProps {
   lessonId: string;
@@ -38,7 +33,7 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   const { name, unlockedSkills } = useUserStore(); 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const { setViewport, toObject, getNodes } = useReactFlow();
+  const { setViewport, toObject, fitView, getViewport } = useReactFlow();
 
   const [status, setStatus] = useState<AssetStatus>('draft');
   const [feedback, setFeedback] = useState<string | undefined>(undefined);
@@ -46,7 +41,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   const hasLoaded = useRef(false);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
 
-  // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
@@ -54,35 +48,56 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   const isLocked = status === 'pending' || status === 'verified';
   const assetId = `logic-${lessonId}`;
   const STORAGE_KEY = `logic-map-${lessonId}`;
-  const SNAPSHOT_KEY = `logic-map-img-${lessonId}`; // 🔥 圖片儲存 Key
+  const SNAPSHOT_KEY = `logic-map-img-${lessonId}`;
 
   const hasAdvancedLogic = unlockedSkills.includes('logic-2');
 
-  // 🔥 輔助函式：截圖並存檔
+  // 🔥 修復後的截圖函式
   const captureAndSave = useCallback(async () => {
-    // 取得畫布元素 (.react-flow__viewport)
-    const viewportEl = document.querySelector('.react-flow__viewport') as HTMLElement;
-    if (!viewportEl) return;
+    // 1. 取得畫布容器 (.react-flow)
+    // 這裡我們抓取包含節點的視口部分，避免抓到外層的 padding
+    const flowElement = document.querySelector('.react-flow') as HTMLElement;
+    if (!flowElement) return;
+
+    const originalViewport = getViewport();
 
     try {
-      // 為了截取完整圖形，我們暫時計算邊界 (Optional)
-      // 這裡直接截取當前視口比較快
-      const dataUrl = await toPng(document.querySelector('.react-flow') as HTMLElement, {
+      // 2. 自動聚焦 (Fit View)
+      // 使用更寬鬆的 padding 確保邊緣不會被切掉
+      fitView({ padding: 0.5, duration: 0 }); 
+
+      // 等待 React Flow 更新 DOM (增加延遲以確保 SVG markers 渲染完成)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // 3. 截圖
+      // 🔥 修正重點：移除 width/height/style 的強制設定
+      // 讓它抓取當前容器的自然大小，避免 SVG 座標錯亂
+      const dataUrl = await toPng(flowElement, {
         backgroundColor: '#ffffff',
-        width: 800, // 強制寬度，避免圖片太大
-        height: 600,
-        style: {
-            transform: 'scale(1)', // 避免縮放偏移
+        // 提升解析度 (2倍)，這樣即使容器較小，圖片依然清晰
+        pixelRatio: 2, 
+        // 過濾掉 UI 控制項
+        filter: (node) => {
+            const classList = node.classList;
+            if (!classList) return true;
+            return !classList.contains('react-flow__controls') && 
+                   !classList.contains('react-flow__panel') && 
+                   !classList.contains('react-flow__minimap');
         }
       });
+
       localStorage.setItem(SNAPSHOT_KEY, dataUrl);
-      console.log('邏輯圖快照已儲存');
+      console.log('邏輯圖快照已儲存 (Auto)');
+
     } catch (err) {
       console.error('截圖失敗', err);
+    } finally {
+      // 4. 恢復使用者原本的視角
+      setViewport(originalViewport);
     }
-  }, [SNAPSHOT_KEY]);
+  }, [SNAPSHOT_KEY, fitView, getViewport, setViewport]);
 
-  // 初始化 (保持不變)
+  // 初始化
   useEffect(() => {
     let localData: any = null;
     const savedString = localStorage.getItem(STORAGE_KEY);
@@ -139,11 +154,12 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
     setTimeout(() => { hasLoaded.current = true; }, 500);
   }, [lessonId, name, setNodes, setEdges, setViewport, assetId, STORAGE_KEY]);
 
-
-  // 自動存檔 + 自動截圖
+  // 自動存檔 + 截圖
   useEffect(() => {
     if (!hasLoaded.current || isLocked || showTemplateSelector) return;
     setSaveStatus('saving');
+    
+    // 延長 debounce 時間，避免頻繁截圖造成卡頓
     const timer = setTimeout(() => {
       const flowData = {
         nodes,
@@ -154,14 +170,12 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(flowData));
       
-      // 🔥 存檔時順便截圖 (為了效能，可以不需要每次都截，這裡為了展示先每次都截)
-      captureAndSave();
+      captureAndSave(); 
 
       setSaveStatus('saved');
-    }, 2000); // 延長到 2秒，避免截圖太頻繁卡頓
+    }, 2000); 
     return () => clearTimeout(timer);
   }, [nodes, edges, status, feedback, isLocked, toObject, STORAGE_KEY, showTemplateSelector, captureAndSave]);
-
 
   // 提交
   const onSubmit = useCallback(async () => {
@@ -170,7 +184,7 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
       return;
     }
     
-    // 🔥 提交前強制截圖一次
+    // 提交前強制截圖一次，並等待完成
     await captureAndSave();
 
     const fullData = { nodes, edges, viewport: toObject().viewport };
@@ -191,8 +205,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
     alert('🚀 已提交邏輯圖！(獲得 +10 XP)');
   }, [nodes, edges, lessonId, toObject, name, assetId, STORAGE_KEY, captureAndSave]);
 
-
-  // 模板選擇
   const handleTemplateSelect = (template: LogicTemplate) => {
       setNodes(template.nodes);
       setEdges(template.edges);
@@ -203,12 +215,11 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   const handleReset = () => {
       if(confirm('確定要清空畫布並重新選擇模板嗎？\n這將會刪除目前的進度！')) {
           localStorage.removeItem(STORAGE_KEY);
-          localStorage.removeItem(SNAPSHOT_KEY); // 清除截圖
+          localStorage.removeItem(SNAPSHOT_KEY); 
           setShowTemplateSelector(true);
       }
   };
 
-  // ... (其餘互動邏輯保持不變)
   const onConnect = useCallback(
     (params: Connection | Edge) => !isLocked && setEdges((eds) => addEdge(params, eds)),
     [setEdges, isLocked]
@@ -219,10 +230,12 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
     let style = { background: '#ffffff', border: '1px solid #cbd5e1' };
     let label = '新觀點';
     if (type === 'rebuttal') {
-        style = { background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '4px' } as any;
+        // @ts-ignore
+        style = { background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '4px' };
         label = '反駁/轉折';
     } else if (type === 'evidence') {
-        style = { background: '#dcfce7', border: '2px solid #22c55e', borderRadius: '50%', width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center' } as any;
+        // @ts-ignore
+        style = { background: '#dcfce7', border: '2px solid #22c55e', borderRadius: '50%', width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
         label = '佐證';
     }
     const newNode = {
@@ -300,7 +313,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
                         <button onClick={() => onAddNode('default')} className="flex items-center gap-1 px-3 py-1.5 bg-white text-slate-700 text-sm font-bold rounded shadow-sm hover:text-indigo-600 transition" title="一般觀點">
                             <Plus className="w-4 h-4" /> 觀點
                         </button>
-                        
                         {hasAdvancedLogic && (
                             <>
                                 <button onClick={() => onAddNode('rebuttal')} className="flex items-center gap-1 px-3 py-1.5 hover:bg-white text-red-500 text-sm font-bold rounded transition" title="反駁/轉折">
@@ -312,13 +324,10 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
                             </>
                         )}
                     </div>
-
                     <div className="w-px h-6 bg-slate-200 mx-1"></div>
-
                     <button onClick={handleReset} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition" title="重新選擇模板">
                         <RotateCcw className="w-4 h-4" />
                     </button>
-
                     <button onClick={onSubmit} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-sm font-bold rounded hover:bg-indigo-700 transition shadow-sm">
                         <Send className="w-4 h-4" /> {status === 'rejected' ? '重新提交' : '提交'}
                     </button>
@@ -344,13 +353,7 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
              <div className="bg-white p-6 rounded-xl shadow-2xl w-80 border border-slate-200">
                <h3 className="font-bold text-slate-800 mb-4">編輯論點</h3>
-               <input
-                 type="text"
-                 value={editLabel}
-                 onChange={(e) => setEditLabel(e.target.value)}
-                 className="w-full p-2 border border-slate-300 rounded-lg mb-4 outline-none focus:border-indigo-500"
-                 onKeyDown={(e) => e.key === 'Enter' && handleModalSave()}
-               />
+               <input type="text" value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg mb-4 outline-none focus:border-indigo-500" onKeyDown={(e) => e.key === 'Enter' && handleModalSave()} />
                <div className="flex justify-end gap-2">
                  <button onClick={() => setIsModalOpen(false)} className="px-3 py-1 text-sm text-slate-500 hover:bg-slate-100 rounded">取消</button>
                  <button onClick={handleModalSave} className="px-3 py-1 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">確定</button>
