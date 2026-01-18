@@ -1,11 +1,25 @@
-import Link from "next/link";
-import { LayoutDashboard, BookOpen, GitGraph, Library } from "lucide-react";
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { 
+  LayoutDashboard, 
+  BookOpen, 
+  GitGraph, 
+  Library,
+  LogOut,
+  GalleryHorizontalEnd, // 新增
+  CheckSquare, // 新增
+  Settings
+} from 'lucide-react';
 
 const menuItems = [
   { name: "儀表板", icon: LayoutDashboard, href: "/dashboard" },
   { name: "沉浸式閱讀", icon: BookOpen, href: "/reading" },
   { name: "邏輯思辨", icon: GitGraph, href: "/logic-map" },
   { name: "虛擬書齋", icon: Library, href: "/study" },
+  { name: "成果畫廊", icon: GalleryHorizontalEnd, href: "/gallery" }, // 新增
+  { name: "教師審核", icon: CheckSquare, href: "/teacher/verification" }, // 新增 (模擬老師後台)
 ];
 
 export function Sidebar() {
