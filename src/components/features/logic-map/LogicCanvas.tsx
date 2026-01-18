@@ -15,10 +15,9 @@ import ReactFlow, {
   Node,
   useReactFlow,
   ReactFlowProvider,
-  Viewport,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Plus, Send, Lock, Cloud, Loader2, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Plus, Send, Lock, Cloud, Loader2, Clock, CheckCircle, AlertCircle, Hexagon, Circle } from 'lucide-react'; // 新增 Icon
 import { GamificationEngine } from '@/lib/engines/GamificationEngine';
 import { useUserStore } from '@/store/user-store';
 import { AssetStatus } from '@/lib/types/gamification';
@@ -37,7 +36,7 @@ const defaultNodes = [
 ];
 
 function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
-  const { name } = useUserStore();
+  const { name, unlockedSkills } = useUserStore(); // 🔥 取得解鎖技能
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const { setViewport, toObject } = useReactFlow();
@@ -45,47 +44,39 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   // 狀態管理
   const [status, setStatus] = useState<AssetStatus>('draft');
   const [feedback, setFeedback] = useState<string | undefined>(undefined);
-  
-  // 自動存檔狀態
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
-  const hasLoaded = useRef(false); // 避免初次載入時觸發自動存檔
+  const hasLoaded = useRef(false);
 
-  // Modal 相關
+  // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
 
-  // 鎖定邏輯：審核中或已通過時鎖定；被退回時解鎖
   const isLocked = status === 'pending' || status === 'verified';
   const assetId = `logic-${lessonId}`;
   const STORAGE_KEY = `logic-map-${lessonId}`;
 
-  // 🔄 1. 初始化與同步邏輯 (Sync Logic)
+  // 檢查是否擁有技能
+  const hasAdvancedLogic = unlockedSkills.includes('logic-2');
+
+  // 初始化 (與之前相同，省略部分重複代碼以節省篇幅，請保留原本的 useEffect 邏輯)
   useEffect(() => {
-    // A. 讀取本地 LocalStorage
     let localData: any = null;
     const savedString = localStorage.getItem(STORAGE_KEY);
-    if (savedString) {
-      localData = JSON.parse(savedString);
-    }
+    if (savedString) localData = JSON.parse(savedString);
 
-    // B. 從引擎讀取遠端狀態 (模擬伺服器同步)
     const myAssets = GamificationEngine.getMyAssets(name);
     const remoteAsset = myAssets.find(a => a.id === assetId);
 
-    // C. 比較與合併
     let finalNodes = defaultNodes;
     let finalEdges = [];
     let finalStatus: AssetStatus = 'draft';
     let finalFeedback = undefined;
     let finalViewport = { x: 0, y: 0, zoom: 1 };
 
-    // 如果遠端存在，以遠端狀態為準
     if (remoteAsset) {
         finalStatus = remoteAsset.status;
         finalFeedback = remoteAsset.feedback;
-        
-        // 如果本地遺失資料，嘗試從遠端還原 (前提是提交時有存完整 JSON)
         if (!localData && remoteAsset.contentPreview) {
             try {
                 const restoredData = JSON.parse(remoteAsset.contentPreview);
@@ -93,85 +84,66 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
                     finalNodes = restoredData.nodes;
                     finalEdges = restoredData.edges || [];
                     finalViewport = restoredData.viewport || finalViewport;
-                    console.log("🔄 已從伺服器還原邏輯圖內容");
                 }
-            } catch (e) {
-                console.error("還原失敗", e);
-            }
+            } catch (e) {}
         } else if (localData) {
-            // 本地還在，直接用本地的圖，但更新狀態
             finalNodes = localData.nodes || defaultNodes;
             finalEdges = localData.edges || [];
             finalViewport = localData.viewport || finalViewport;
         }
     } else if (localData) {
-        // 只有本地資料 (尚未提交過)
         finalNodes = localData.nodes || defaultNodes;
         finalEdges = localData.edges || [];
         finalStatus = localData.status || 'draft';
         finalViewport = localData.viewport || finalViewport;
     }
 
-    // D. 套用設定
     setNodes(finalNodes);
     setEdges(finalEdges);
     setStatus(finalStatus);
     setFeedback(finalFeedback);
     if (finalViewport) setViewport(finalViewport);
     
-    // 標記已載入完成，可以開始監聽自動存檔
     setTimeout(() => { hasLoaded.current = true; }, 500);
-
   }, [lessonId, name, setNodes, setEdges, setViewport, assetId, STORAGE_KEY]);
 
 
-  // 🔥 2. 全自動存檔 (Auto-Save)
+  // 自動存檔 (保持不變)
   useEffect(() => {
     if (!hasLoaded.current || isLocked) return;
-
     setSaveStatus('saving');
     const timer = setTimeout(() => {
       const flowData = {
         nodes,
         edges,
         viewport: toObject().viewport,
-        status: status === 'rejected' ? 'rejected' : 'draft', // 保持狀態
-        feedback // 保留評語以免消失
+        status: status === 'rejected' ? 'rejected' : 'draft',
+        feedback
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(flowData));
       setSaveStatus('saved');
-    }, 1000); // 1秒後自動存
-
+    }, 1000);
     return () => clearTimeout(timer);
   }, [nodes, edges, status, feedback, isLocked, toObject, STORAGE_KEY]);
 
 
-  // 🚀 3. 提交功能
+  // 提交 (保持不變)
   const onSubmit = useCallback(() => {
     if (nodes.length < 3) {
       alert('⚠️ 結構太簡單了！至少需要 3 個節點才能提交喔。');
       return;
     }
-
-    // 準備完整資料 (用於備份還原)
-    const fullData = {
-        nodes,
-        edges,
-        viewport: toObject().viewport
-    };
-
-    // 更新本地狀態
+    const fullData = { nodes, edges, viewport: toObject().viewport };
     const localPayload = { ...fullData, status: 'pending', feedback: undefined };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(localPayload));
     setStatus('pending');
-    setFeedback(undefined); // 清空舊評語
+    setFeedback(undefined);
 
-    // 送入遊戲引擎 (將完整 JSON 存入 contentPreview 以便還原)
     GamificationEngine.submitAsset({
       id: assetId,
       type: 'logic-map',
       title: `邏輯圖：${lessonId} 結構分析`,
-      contentPreview: JSON.stringify(fullData), // 🔥 這裡存入完整資料字串
+      contentPreview: JSON.stringify(fullData),
       authorId: name,
       authorName: name
     });
@@ -180,19 +152,48 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   }, [nodes, edges, lessonId, toObject, name, assetId, STORAGE_KEY]);
 
 
-  // --- 互動邏輯 ---
+  // 互動 (保持不變)
   const onConnect = useCallback(
     (params: Connection | Edge) => !isLocked && setEdges((eds) => addEdge(params, eds)),
     [setEdges, isLocked]
   );
 
-  const onAddNode = useCallback(() => {
+  // 🔥 升級版新增節點功能
+  const onAddNode = useCallback((type: 'default' | 'rebuttal' | 'evidence' = 'default') => {
     if (isLocked) return;
+
+    let style = { background: '#ffffff', border: '1px solid #cbd5e1' };
+    let label = '新觀點';
+
+    // 根據類型設定樣式 (模擬特殊節點)
+    if (type === 'rebuttal') {
+        style = { 
+            background: '#fee2e2', 
+            border: '2px solid #ef4444',
+            // @ts-ignore
+            borderRadius: '4px' 
+        };
+        label = '反駁/轉折';
+    } else if (type === 'evidence') {
+        style = { 
+            background: '#dcfce7', 
+            border: '2px solid #22c55e',
+            // @ts-ignore
+            borderRadius: '50%', // 圓形
+            width: '100px',
+            height: '100px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+        };
+        label = '佐證';
+    }
+
     const newNode = {
       id: Math.random().toString(36).substr(2, 5),
       position: { x: Math.random() * 400 + 50, y: Math.random() * 300 + 50 }, 
-      data: { label: '新觀點' },
-      style: { background: '#ffffff', border: '1px solid #cbd5e1' }
+      data: { label },
+      style
     };
     setNodes((nds) => nds.concat(newNode));
   }, [setNodes, isLocked]);
@@ -235,9 +236,7 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
           <Controls />
           <MiniMap nodeColor="#e2e8f0" style={{ height: 100 }} />
 
-          {/* 右上控制面板 */}
           <Panel position="top-right" className="flex flex-col gap-2 items-end">
-             {/* 儲存狀態指示器 */}
              <div className="bg-white/80 backdrop-blur px-3 py-1.5 rounded-full shadow-sm border border-slate-100 flex items-center gap-2 text-xs font-medium">
                 {saveStatus === 'saving' ? (
                     <>
@@ -252,19 +251,33 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
                 )}
              </div>
 
-             {/* 操作面板 */}
              <div className="bg-white p-2 rounded-lg shadow-md border border-slate-100 flex gap-2 items-center">
-                {/* 狀態標籤 */}
                 {status === 'pending' && <span className="flex items-center text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded"><Clock className="w-3 h-3 mr-1"/>審核中</span>}
                 {status === 'verified' && <span className="flex items-center text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded"><CheckCircle className="w-3 h-3 mr-1"/>已認證</span>}
                 {status === 'rejected' && <span className="flex items-center text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded"><AlertCircle className="w-3 h-3 mr-1"/>需修改</span>}
 
-                {/* 按鈕群組 */}
                 {!isLocked && (
                     <>
-                    <button onClick={onAddNode} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 text-sm font-bold rounded hover:bg-indigo-100 transition">
-                        <Plus className="w-4 h-4" /> 新增
-                    </button>
+                    {/* 🔥 根據技能解鎖按鈕 */}
+                    <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
+                        <button onClick={() => onAddNode('default')} className="flex items-center gap-1 px-3 py-1.5 bg-white text-slate-700 text-sm font-bold rounded shadow-sm hover:text-indigo-600 transition" title="一般觀點">
+                            <Plus className="w-4 h-4" /> 觀點
+                        </button>
+                        
+                        {hasAdvancedLogic && (
+                            <>
+                                <button onClick={() => onAddNode('rebuttal')} className="flex items-center gap-1 px-3 py-1.5 hover:bg-white text-red-500 text-sm font-bold rounded transition" title="反駁/轉折">
+                                    <Hexagon className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => onAddNode('evidence')} className="flex items-center gap-1 px-3 py-1.5 hover:bg-white text-green-600 text-sm font-bold rounded transition" title="佐證資料">
+                                    <Circle className="w-4 h-4" />
+                                </button>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="w-px h-6 bg-slate-200 mx-1"></div>
+
                     <button onClick={onSubmit} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-sm font-bold rounded hover:bg-indigo-700 transition shadow-sm">
                         <Send className="w-4 h-4" /> {status === 'rejected' ? '重新提交' : '提交'}
                     </button>
@@ -273,10 +286,9 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
              </div>
           </Panel>
 
-          {/* 退回評語顯示區 */}
           {status === 'rejected' && feedback && (
              <Panel position="bottom-center" className="mb-8">
-                 <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl shadow-lg flex items-start gap-3 max-w-md animate-in slide-in-from-bottom-5">
+                 <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl shadow-lg flex items-start gap-3 max-w-md">
                     <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                     <div>
                         <h4 className="font-bold text-sm mb-1">老師的回饋：</h4>
@@ -287,7 +299,6 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
           )}
         </ReactFlow>
 
-        {/* Modal 保持不變 */}
         {isModalOpen && (
            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
              <div className="bg-white p-6 rounded-xl shadow-2xl w-80 border border-slate-200">

@@ -3,10 +3,10 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useUserStore } from "@/store/user-store";
 import { STORE_ITEMS } from "@/lib/data/store-items";
-import { Coins, ShoppingBag, Gift, Ticket, Palette } from "lucide-react";
+import { Coins, ShoppingBag, Gift, Ticket, Palette, Check } from "lucide-react";
 
 export default function StorePage() {
-  const { coins, buyItem, inventory, useItem } = useUserStore();
+  const { coins, buyItem, inventory, useItem, equipItem, activeTheme, activeFrame } = useUserStore();
 
   const handleBuy = (id: string, price: number, name: string) => {
     if (confirm(`確定要花費 ${price} 文心幣購買【${name}】嗎？`)) {
@@ -19,13 +19,27 @@ export default function StorePage() {
     }
   };
 
-  const handleUse = (id: string, name: string) => {
-      // 這裡簡單模擬「使用/出示」給老師看
-      if(confirm(`【老師專用】\n請確認是否核銷一張「${name}」？\n(此動作將消耗 1 個物品)`)) {
-          useItem(id);
-          alert("核銷完成！");
+  const handleInventoryAction = (id: string, name: string, type: 'virtual' | 'physical', category: string) => {
+      // 實體商品：消耗/核銷
+      if (type === 'physical') {
+        if(confirm(`【老師專用】\n請確認是否核銷一張「${name}」？\n(此動作將消耗 1 個物品)`)) {
+            useItem(id);
+            alert("核銷完成！");
+        }
+        return;
+      }
+
+      // 虛擬商品：裝備/卸下
+      if (type === 'virtual') {
+          // 判斷類別
+          if (category === 'theme' || category === 'avatar') {
+              equipItem(id, category as 'theme' | 'avatar');
+          }
       }
   };
+
+  // 檢查是否正在裝備中
+  const isEquipped = (id: string) => activeTheme === id || activeFrame === id;
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -96,23 +110,38 @@ export default function StorePage() {
                 inventory.map(slot => {
                     const item = STORE_ITEMS.find(i => i.id === slot.itemId);
                     if (!item) return null;
+                    const equipped = isEquipped(item.id);
+
                     return (
-                        <div key={slot.itemId} className="bg-white p-4 rounded-xl border border-slate-200 flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-lg ${item.imageColor} shrink-0 flex items-center justify-center text-white`}>
-                                <Ticket className="w-6 h-6" />
+                        <div key={slot.itemId} className={`bg-white p-4 rounded-xl border flex items-center gap-4 transition ${equipped ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-slate-200'}`}>
+                            <div className={`w-12 h-12 rounded-lg ${item.imageColor} shrink-0 flex items-center justify-center text-white relative`}>
+                                {item.category === 'theme' && <Palette className="w-6 h-6" />}
+                                {item.category === 'teacher' && <Ticket className="w-6 h-6" />}
+                                {item.category === 'avatar' && <Gift className="w-6 h-6" />}
+                                
+                                {equipped && (
+                                    <div className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-0.5 border-2 border-white">
+                                        <Check className="w-3 h-3" />
+                                    </div>
+                                )}
                             </div>
                             <div className="flex-1">
                                 <h4 className="font-bold text-slate-800">{item.name}</h4>
-                                <p className="text-xs text-slate-500">持有數量：<span className="font-bold text-indigo-600 text-lg">{slot.count}</span></p>
+                                <p className="text-xs text-slate-500">持有：<span className="font-bold text-indigo-600">{slot.count}</span></p>
                             </div>
-                            {item.type === 'physical' && (
-                                <button 
-                                    onClick={() => handleUse(item.id, item.name)}
-                                    className="px-3 py-1 bg-orange-100 text-orange-700 text-xs font-bold rounded-lg hover:bg-orange-200"
-                                >
-                                    使用/核銷
-                                </button>
-                            )}
+                            
+                            <button 
+                                onClick={() => handleInventoryAction(item.id, item.name, item.type, item.category)}
+                                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${
+                                    item.type === 'physical' 
+                                        ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                                        : equipped 
+                                            ? 'bg-green-100 text-green-700 cursor-default'
+                                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                }`}
+                            >
+                                {item.type === 'physical' ? '核銷' : equipped ? '使用中' : '裝備'}
+                            </button>
                         </div>
                     );
                 })

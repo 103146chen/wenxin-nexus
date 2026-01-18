@@ -11,10 +11,13 @@ interface UserState {
   maxXp: number;
   coins: number;
   
-  // 🔥 新增欄位
-  sp: number; // 技能點 (Skill Points)
-  unlockedSkills: string[]; // 已解鎖的技能 ID
-  inventory: { itemId: string; count: number }[]; // 背包
+  sp: number;
+  unlockedSkills: string[];
+  inventory: { itemId: string; count: number }[];
+
+  // 🔥 新增：目前裝備的 ID (預設為 'default')
+  activeTheme: string;
+  activeFrame: string;
 
   streakDays: number;
   lastLoginDate: string;
@@ -23,10 +26,12 @@ interface UserState {
   addCoins: (amount: number) => void;
   updateProfile: (name: string) => void;
   
-  // 🔥 新增動作
   unlockSkill: (skillId: string, cost: number) => boolean;
   buyItem: (itemId: string, price: number) => boolean;
-  useItem: (itemId: string) => boolean; // 使用/消耗物品
+  useItem: (itemId: string) => boolean;
+  
+  // 🔥 新增：裝備物品
+  equipItem: (itemId: string, category: 'theme' | 'avatar') => void;
 }
 
 const calculateLevelFromXp = (xp: number) => Math.floor(0.1 * Math.sqrt(xp)) || 1;
@@ -43,10 +48,13 @@ export const useUserStore = create<UserState>()(
       maxXp: 100,
       coins: 0,
       
-      // 初始化新欄位
       sp: 0, 
       unlockedSkills: [],
       inventory: [],
+      
+      // 初始化裝備
+      activeTheme: 'default',
+      activeFrame: 'default',
       
       streakDays: 1,
       lastLoginDate: new Date().toISOString().split('T')[0],
@@ -60,7 +68,6 @@ export const useUserStore = create<UserState>()(
         let newSp = sp;
 
         if (newLevel > level) {
-          // 升級獎勵：100 Coins + 1 SP
           newCoins += 100;
           newSp += 1; 
           alert(`🎉 恭喜升級 Lv.${newLevel}！\n獲得 100 文心幣 與 1 技能點 (SP)`);
@@ -78,7 +85,6 @@ export const useUserStore = create<UserState>()(
       addCoins: (amount) => set((state) => ({ coins: state.coins + amount })),
       updateProfile: (name) => set({ name }),
 
-      // 解鎖技能
       unlockSkill: (skillId, cost) => {
         const { sp, unlockedSkills } = get();
         if (sp >= cost && !unlockedSkills.includes(skillId)) {
@@ -91,7 +97,6 @@ export const useUserStore = create<UserState>()(
         return false;
       },
 
-      // 購買物品
       buyItem: (itemId, price) => {
         const { coins, inventory } = get();
         if (coins >= price) {
@@ -113,7 +118,6 @@ export const useUserStore = create<UserState>()(
         return false;
       },
       
-      // 使用物品 (例如找老師兌換後扣除)
       useItem: (itemId) => {
         const { inventory } = get();
         const index = inventory.findIndex(i => i.itemId === itemId);
@@ -127,6 +131,15 @@ export const useUserStore = create<UserState>()(
             return true;
         }
         return false;
+      },
+
+      // 🔥 實作裝備邏輯
+      equipItem: (itemId, category) => {
+          if (category === 'theme') {
+              set({ activeTheme: itemId });
+          } else if (category === 'avatar') {
+              set({ activeFrame: itemId });
+          }
       }
     }),
     { name: 'wenxin-user-storage' }

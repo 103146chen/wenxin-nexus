@@ -1,30 +1,39 @@
 'use client';
 
 import { useUserStore } from '@/store/user-store';
-import { Trophy, Coins, Flame } from 'lucide-react';
+import { Trophy, Coins, Flame, Crown } from 'lucide-react'; // 新增 Crown
 
 export function UserProfileCard() {
-  const { name, title, level, xp, maxXp, coins, streakDays } = useUserStore();
+  const { name, title, level, xp, maxXp, coins, streakDays, activeFrame } = useUserStore();
 
-  // 計算當前等級的進度百分比
-  // 邏輯：(目前XP - 上一級總XP) / (下一級總XP - 上一級總XP)
-  // 簡化版：直接用當前 XP / maxXp 示意 (若是累進制) 或區間制
-  // 這裡為了簡單，我們顯示相對於下一級的進度
   const currentLevelBaseXp = Math.pow(level * 10, 2);
   const progress = Math.min(100, Math.max(0, ((xp - currentLevelBaseXp) / (maxXp - currentLevelBaseXp)) * 100)) || 0;
 
+  // 🔥 判斷是否裝備金框
+  const isGoldFrame = activeFrame === 'frame-gold';
+
   return (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 relative overflow-hidden">
-      {/* 背景裝飾 */}
       <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-[80px] -mr-4 -mt-4"></div>
 
       <div className="relative z-10 flex gap-6 items-center">
         {/* 頭像區 */}
-        <div className="flex flex-col items-center gap-2">
-            <div className="w-20 h-20 rounded-full bg-slate-100 border-4 border-white shadow-md flex items-center justify-center text-3xl">
+        <div className="flex flex-col items-center gap-2 relative group">
+            {/* 🔥 金框特效 */}
+            {isGoldFrame && (
+                <div className="absolute -inset-1 bg-gradient-to-tr from-yellow-300 via-amber-400 to-yellow-200 rounded-full animate-spin-slow opacity-80 blur-[1px]"></div>
+            )}
+            
+            <div className={`w-20 h-20 rounded-full bg-slate-100 shadow-md flex items-center justify-center text-3xl relative z-10 border-4 ${
+                isGoldFrame ? 'border-amber-400' : 'border-white'
+            }`}>
                 🎓
+                {isGoldFrame && <Crown className="absolute -top-4 -right-2 w-6 h-6 text-amber-500 fill-yellow-400 transform rotate-12" />}
             </div>
-            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full">
+            
+            <span className={`px-2 py-0.5 text-xs font-bold rounded-full relative z-10 ${
+                isGoldFrame ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'
+            }`}>
                 Lv.{level}
             </span>
         </div>
@@ -40,7 +49,6 @@ export function UserProfileCard() {
                 </h3>
             </div>
 
-            {/* 經驗條 */}
             <div className="space-y-1">
                 <div className="flex justify-between text-xs text-slate-500 font-medium">
                     <span>EXP</span>
@@ -54,7 +62,6 @@ export function UserProfileCard() {
                 </div>
             </div>
 
-            {/* 資產數據 */}
             <div className="flex gap-4 pt-1">
                 <div className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-3 py-1 rounded-lg text-sm font-bold">
                     <Coins className="w-4 h-4" />

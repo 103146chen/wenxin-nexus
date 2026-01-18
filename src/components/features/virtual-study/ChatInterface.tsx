@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, RefreshCw } from 'lucide-react';
+import { Send, User, Bot, RefreshCw, Sparkles } from 'lucide-react'; // 新增 Sparkles
 import { Button } from '@/components/ui/button';
+import { useUserStore } from '@/store/user-store'; // 引入 Store
 
 interface Message {
   id: string;
@@ -11,30 +12,27 @@ interface Message {
 }
 
 interface ChatInterfaceProps {
-  tutorName: string; // 例如 "蘇軾"
-  initialMessage: string; // 例如 "吾乃蘇子瞻，客官有何指教？"
+  tutorName: string; 
+  initialMessage: string;
 }
 
 export default function ChatInterface({ tutorName, initialMessage }: ChatInterfaceProps) {
-  // 聊天記錄狀態
+  const { activeTheme } = useUserStore(); // 🔥 取得目前主題
+  
   const [messages, setMessages] = useState<Message[]>([
     { id: 'init', role: 'assistant', content: initialMessage }
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   
-  // 自動捲動到底部
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
   useEffect(scrollToBottom, [messages, isTyping]);
 
-  // 模擬 AI 回應的簡單邏輯 (之後會換成真的 OpenAI API)
   const simulateAIResponse = (userText: string) => {
     setIsTyping(true);
-    
-    // 假裝思考 1~2 秒
     setTimeout(() => {
       let reply = '';
       if (userText.includes('你好') || userText.includes('嗨')) {
@@ -58,8 +56,6 @@ export default function ChatInterface({ tutorName, initialMessage }: ChatInterfa
 
   const handleSend = () => {
     if (!inputValue.trim()) return;
-
-    // 1. 加入使用者訊息
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -67,21 +63,41 @@ export default function ChatInterface({ tutorName, initialMessage }: ChatInterfa
     };
     setMessages(prev => [...prev, userMsg]);
     setInputValue('');
-
-    // 2. 觸發 AI 回應
     simulateAIResponse(inputValue);
   };
 
+  // 🔥 定義主題樣式
+  const isNightTheme = activeTheme === 'theme-night';
+  
+  const containerClass = isNightTheme 
+    ? 'bg-slate-900 border-slate-700' 
+    : 'bg-white border-slate-200';
+    
+  const headerClass = isNightTheme 
+    ? 'bg-slate-800 border-slate-700 text-slate-100' 
+    : 'bg-slate-50 border-slate-100 text-slate-800';
+    
+  const contentBgClass = isNightTheme
+    ? 'bg-[url("https://www.transparenttextures.com/patterns/stardust.png")] bg-slate-900 text-slate-200' // 簡單的星空紋理模擬
+    : 'bg-slate-50/50 text-slate-700';
+
+  const botBubbleClass = isNightTheme
+    ? 'bg-slate-800 text-slate-200 border-slate-700'
+    : 'bg-white text-slate-700 border border-slate-100';
+
   return (
-    <div className="flex flex-col h-[600px] bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+    <div className={`flex flex-col h-[600px] border rounded-xl shadow-sm overflow-hidden transition-colors duration-500 ${containerClass}`}>
       {/* 聊天標題 */}
-      <div className="bg-slate-50 border-b border-slate-100 p-4 flex items-center justify-between">
+      <div className={`p-4 flex items-center justify-between border-b ${headerClass}`}>
         <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isNightTheme ? 'bg-indigo-900 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
                 <Bot className="w-6 h-6" />
             </div>
             <div>
-                <h3 className="font-bold text-slate-800">{tutorName} AI</h3>
+                <h3 className={`font-bold flex items-center gap-2 ${isNightTheme ? 'text-white' : 'text-slate-800'}`}>
+                    {tutorName} AI
+                    {isNightTheme && <Sparkles className="w-3 h-3 text-yellow-400 animate-pulse"/>}
+                </h3>
                 <p className="text-xs text-green-600 flex items-center">
                     <span className="w-2 h-2 rounded-full bg-green-500 mr-1 animate-pulse"></span>
                     在線中
@@ -92,20 +108,22 @@ export default function ChatInterface({ tutorName, initialMessage }: ChatInterfa
             variant="ghost" 
             size="sm" 
             onClick={() => setMessages([{ id: 'init', role: 'assistant', content: initialMessage }])}
-            title="重新開始對話"
+            className={isNightTheme ? 'text-slate-400 hover:text-white hover:bg-slate-700' : ''}
         >
-            <RefreshCw className="w-4 h-4 text-slate-400" />
+            <RefreshCw className="w-4 h-4" />
         </Button>
       </div>
 
       {/* 訊息顯示區 */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+      <div className={`flex-1 overflow-y-auto p-6 space-y-6 ${contentBgClass}`}>
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`flex gap-3 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 {/* 頭像 */}
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                    msg.role === 'user' ? 'bg-slate-200 text-slate-600' : 'bg-indigo-100 text-indigo-600'
+                    msg.role === 'user' 
+                        ? (isNightTheme ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600')
+                        : (isNightTheme ? 'bg-indigo-900 text-indigo-400' : 'bg-indigo-100 text-indigo-600')
                 }`}>
                     {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                 </div>
@@ -113,8 +131,8 @@ export default function ChatInterface({ tutorName, initialMessage }: ChatInterfa
                 {/* 氣泡 */}
                 <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
                     msg.role === 'user' 
-                        ? 'bg-slate-800 text-white rounded-tr-none' 
-                        : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none'
+                        ? 'bg-indigo-600 text-white rounded-tr-none' 
+                        : `${botBubbleClass} rounded-tl-none`
                 }`}>
                     {msg.content}
                 </div>
@@ -122,14 +140,13 @@ export default function ChatInterface({ tutorName, initialMessage }: ChatInterfa
           </div>
         ))}
         
-        {/* 打字動畫 */}
         {isTyping && (
           <div className="flex justify-start">
              <div className="flex gap-3 max-w-[80%]">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isNightTheme ? 'bg-indigo-900 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
                     <Bot className="w-4 h-4" />
                 </div>
-                <div className="bg-white border border-slate-100 p-4 rounded-2xl rounded-tl-none flex gap-1 items-center h-10">
+                <div className={`${botBubbleClass} p-4 rounded-2xl rounded-tl-none flex gap-1 items-center h-10`}>
                     <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                     <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
                     <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
@@ -141,7 +158,7 @@ export default function ChatInterface({ tutorName, initialMessage }: ChatInterfa
       </div>
 
       {/* 輸入區 */}
-      <div className="p-4 bg-white border-t border-slate-100">
+      <div className={`p-4 border-t ${isNightTheme ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
         <div className="flex gap-2">
             <input 
                 type="text"
@@ -149,7 +166,11 @@ export default function ChatInterface({ tutorName, initialMessage }: ChatInterfa
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder={`請輸入你想問${tutorName}的問題...`}
-                className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition"
+                className={`flex-1 p-3 border rounded-xl focus:outline-none focus:ring-2 transition ${
+                    isNightTheme 
+                    ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500 focus:ring-indigo-500' 
+                    : 'bg-slate-50 border-slate-200 focus:ring-indigo-100 focus:border-indigo-400'
+                }`}
             />
             <Button 
                 onClick={handleSend}

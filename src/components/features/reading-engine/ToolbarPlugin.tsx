@@ -1,8 +1,10 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { $getSelection, $isRangeSelection, CLEAR_EDITOR_COMMAND } from 'lexical';
 import { $createCommentaryNode } from './nodes/CommentaryNode';
-import { Edit3, BookOpen, Wand2, Trash2, CheckCircle, Cloud, Loader2 } from 'lucide-react'; // 新增 Icon
-import { useEffect, useState, useCallback } from 'react';
+import { Edit3, BookOpen, Wand2, Trash2, Cloud, Loader2, Search } from 'lucide-react'; // 新增 Search
+import { useEffect, useState } from 'react';
+import { useUserStore } from '@/store/user-store'; // 引入 Store
+import { TOGGLE_HIGHLIGHT_COMMAND } from './HighlighterPlugin'; // 引入 Command
 
 interface ToolbarProps {
   lessonId: string;
@@ -10,13 +12,16 @@ interface ToolbarProps {
 
 export default function ToolbarPlugin({ lessonId }: ToolbarProps) {
   const [editor] = useLexicalComposerContext();
+  const { unlockedSkills } = useUserStore(); // 取得技能
+  
   const [isEditable, setIsEditable] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
+  const [isHighlightOn, setIsHighlightOn] = useState(false);
 
-  // 產生唯一的 Storage Key
   const STORAGE_KEY = `wenxin-editor-${lessonId}`; 
+  const hasReadSkill = unlockedSkills.includes('read-2'); // 檢查技能
 
-  // 1. 初始化讀取
+  // 初始化與自動存檔 (保持不變)
   useEffect(() => {
     const savedContent = localStorage.getItem(STORAGE_KEY);
     if (savedContent) {
@@ -27,28 +32,18 @@ export default function ToolbarPlugin({ lessonId }: ToolbarProps) {
     }
   }, [editor, lessonId, STORAGE_KEY]);
 
-  // 🔥 2. 全自動存檔監聽器 (Auto-Save Listener)
   useEffect(() => {
     return editor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState }) => {
-      // 只有當內容真的有變動時才存檔
       if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
-
       setSaveStatus('saving');
-      
-      // 使用 editorState.read 確保拿到最新狀態
       editorState.read(() => {
         const jsonString = JSON.stringify(editorState);
         localStorage.setItem(STORAGE_KEY, jsonString);
-        
-        // 模擬一點延遲讓使用者感覺到「正在存」
-        setTimeout(() => {
-          setSaveStatus('saved');
-        }, 500);
+        setTimeout(() => setSaveStatus('saved'), 500);
       });
     });
   }, [editor, STORAGE_KEY]);
 
-  // 3. 清空功能
   const handleClear = () => {
     if (confirm('確定要清空所有筆記與標註嗎？此動作無法復原。')) {
       editor.dispatchCommand(CLEAR_EDITOR_COMMAND, undefined);
@@ -56,20 +51,17 @@ export default function ToolbarPlugin({ lessonId }: ToolbarProps) {
     }
   };
 
-  // 4. 切換模式
   const toggleEditable = () => {
     editor.setEditable(!isEditable);
     setIsEditable(!isEditable);
   };
 
-  // 5. 魔法註釋
   const handleAddComment = () => {
     editor.update(() => {
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
         const textContent = selection.getTextContent();
         if (!textContent) return;
-        
         const commentId = 'term-' + Math.floor(Math.random() * 100000);
         const commentaryNode = $createCommentaryNode(textContent, commentId);
         selection.insertNodes([commentaryNode]);
@@ -77,20 +69,24 @@ export default function ToolbarPlugin({ lessonId }: ToolbarProps) {
     });
   };
 
+  // 🔥 切換高亮模式
+  const toggleHighlight = () => {
+      const newState = !isHighlightOn;
+      setIsHighlightOn(newState);
+      editor.dispatchCommand(TOGGLE_HIGHLIGHT_COMMAND, newState);
+  };
+
   return (
     <div className="flex items-center justify-between p-2 bg-white border-b border-stone-200 shadow-sm sticky top-0 z-20 h-14">
       
-      {/* 左側：狀態顯示區 */}
       <div className="flex items-center gap-3 px-2">
         {saveStatus === 'saving' ? (
           <span className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            自動儲存中...
+            <Loader2 className="w-3 h-3 animate-spin" /> 自動儲存中...
           </span>
         ) : (
           <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium animate-in fade-in duration-300">
-            <Cloud className="w-3 h-3" />
-            已同步
+            <Cloud className="w-3 h-3" /> 已同步
           </span>
         )}
 
@@ -107,9 +103,24 @@ export default function ToolbarPlugin({ lessonId }: ToolbarProps) {
           {isEditable ? <Edit3 className="w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
           {isEditable ? '編輯模式' : '閱讀模式'}
         </button>
+
+        {/* 🔥 技能按鈕：探賾 (難詞高亮) */}
+        {hasReadSkill && (
+            <button 
+                onClick={toggleHighlight}
+                className={`flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded transition border ${
+                    isHighlightOn
+                        ? 'bg-amber-100 text-amber-700 border-amber-200'
+                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                }`}
+                title="技能：探賾 - 開啟難詞提示"
+            >
+                <Search className="w-4 h-4" />
+                {isHighlightOn ? '探賾 ON' : '探賾 OFF'}
+            </button>
+        )}
       </div>
 
-      {/* 右側：工具區 */}
       <div className="flex gap-2">
          {isEditable && (
             <>
@@ -118,8 +129,7 @@ export default function ToolbarPlugin({ lessonId }: ToolbarProps) {
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-50 rounded transition"
                 title="選取文字後點擊此按鈕"
               >
-                <Wand2 className="w-4 h-4" />
-                新增註釋
+                <Wand2 className="w-4 h-4" /> 新增註釋
               </button>
 
               <button 
