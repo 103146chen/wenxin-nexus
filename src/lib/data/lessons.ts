@@ -1,11 +1,20 @@
+export interface QuizQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string; // 用於「天機」技能的提示
+}
+
 export interface Lesson {
   id: string;
   title: string;
   author: string;
   description: string;
   colorTheme: string;
-  // 🔥 新增：難詞列表 (用於技能：探賾)
   difficultWords: string[];
+  // 🔥 新增：測驗題庫
+  quizzes: QuizQuestion[];
 }
 
 export const ALL_LESSONS: Lesson[] = [
@@ -15,7 +24,35 @@ export const ALL_LESSONS: Lesson[] = [
     author: '宋 ‧ 蘇軾',
     description: '壬戌之秋，七月既望，蘇子與客泛舟遊於赤壁之下。清風徐來，水波不興...',
     colorTheme: 'orange',
-    difficultWords: ['既望', '馮虛御風', '嫠婦', '愀然', '蜉蝣', '無盡藏']
+    difficultWords: ['既望', '馮虛御風', '嫠婦', '愀然', '蜉蝣', '無盡藏'],
+    quizzes: [
+      {
+        id: 'q1-1',
+        question: '「縱一葦之所如，凌萬頃之茫然」句中，「一葦」運用了何種修辭手法？',
+        options: ['譬喻', '轉化', '借代', '誇飾'],
+        correctIndex: 2,
+        explanation: '「一葦」原指蘆葦，這裡借代為小船。'
+      },
+      {
+        id: 'q1-2',
+        question: '關於《赤壁賦》中的「水」與「月」，下列敘述何者正確？',
+        options: [
+          '蘇軾認為水月皆是虛幻，人生應及時行樂',
+          '客認為水月永恆長存，反襯人生短暫',
+          '水代表變動，月代表永恆，兩者對立',
+          '蘇軾以水月闡述「變」與「不變」的哲理'
+        ],
+        correctIndex: 3,
+        explanation: '蘇軾提出「逝者如斯，而未嘗往也」的觀點，說明本體不變的道理。'
+      },
+      {
+        id: 'q1-3',
+        question: '「渺渺兮予懷，望美人兮天一方」中的「美人」象徵什麼？',
+        options: ['心中思慕的女子', '理想中的賢君', '美好的才德', '隱居的高士'],
+        correctIndex: 1,
+        explanation: '古人常以「美人」比喻君王，此處抒發忠君愛國卻遭貶謫的感慨。'
+      }
+    ]
   },
   {
     id: 'lesson-2',
@@ -23,7 +60,23 @@ export const ALL_LESSONS: Lesson[] = [
     author: '唐 ‧ 韓愈',
     description: '古之學者必有師。師者，所以傳道、受業、解惑也。人非生而知之者，孰能無惑？',
     colorTheme: 'indigo',
-    difficultWords: ['句讀', '老聃', '郯子', '諂媚', '不恥相師']
+    difficultWords: ['句讀', '老聃', '郯子', '諂媚', '不恥相師'],
+    quizzes: [
+      {
+        id: 'q2-1',
+        question: '韓愈認為擇師的標準是什麼？',
+        options: ['地位高低', '年齡長幼', '道之所存', '文章好壞'],
+        correctIndex: 2,
+        explanation: '文中提到：「道之所存，師之所存也」，強調以「道」為標準。'
+      },
+      {
+        id: 'q2-2',
+        question: '「小學而大遺」在文中是指什麼現象？',
+        options: ['重視小學教育，忽略大學教育', '學習句讀之學，卻遺漏了解惑之道', '小時候學習勤奮，長大後卻荒廢了', '只學會了文字，卻不懂得義理'],
+        correctIndex: 1,
+        explanation: '韓愈批評當時士大夫為子擇師教句讀，自己卻恥於從師問道，是捨本逐末。'
+      }
+    ]
   },
   {
     id: 'lesson-3',
@@ -31,7 +84,23 @@ export const ALL_LESSONS: Lesson[] = [
     author: '唐 ‧ 柳宗元',
     description: '自余為僇人，居是州，恆惴慄。其隙也，則施施而行，漫漫而遊...',
     colorTheme: 'emerald',
-    difficultWords: ['僇人', '惴慄', '施施', '箕踞', '衽席', '培塿']
+    difficultWords: ['僇人', '惴慄', '施施', '箕踞', '衽席', '培塿'],
+    quizzes: [
+      {
+        id: 'q3-1',
+        question: '「始得」二字在全文結構中具有什麼意義？',
+        options: ['表示這是一系列遊記的第一篇', '暗示先前之遊皆非真遊，至此才領略山水真諦', '說明西山難以到達，現在才終於登頂', '強調作者初次來到永州的心情'],
+        correctIndex: 1,
+        explanation: '「始得」點出心境轉折，將之前的遊覽視為未始遊，西山之遊才是真正的開始。'
+      },
+      {
+        id: 'q3-2',
+        question: '文中「心凝形釋，與萬化冥合」表達了什麼境界？',
+        options: ['物我兩忘，天人合一', '恐懼消除，心情放鬆', '身體疲憊，精神渙散', '景色迷人，流連忘返'],
+        correctIndex: 0,
+        explanation: '形容精神凝聚，形體解脫，與大自然融為一體，達到忘我的精神自由。'
+      }
+    ]
   },
 ];
 

@@ -14,8 +14,10 @@ interface UserState {
   sp: number;
   unlockedSkills: string[];
   inventory: { itemId: string; count: number }[];
+  
+  // 🔥 新增：技能冷卻紀錄 (skillId -> timestamp)
+  skillCooldowns: Record<string, number>;
 
-  // 🔥 新增：目前裝備的 ID (預設為 'default')
   activeTheme: string;
   activeFrame: string;
 
@@ -29,9 +31,10 @@ interface UserState {
   unlockSkill: (skillId: string, cost: number) => boolean;
   buyItem: (itemId: string, price: number) => boolean;
   useItem: (itemId: string) => boolean;
-  
-  // 🔥 新增：裝備物品
   equipItem: (itemId: string, category: 'theme' | 'avatar') => void;
+  
+  // 🔥 新增：發動技能
+  activateSkill: (skillId: string, cooldownHours: number) => boolean;
 }
 
 const calculateLevelFromXp = (xp: number) => Math.floor(0.1 * Math.sqrt(xp)) || 1;
@@ -51,8 +54,8 @@ export const useUserStore = create<UserState>()(
       sp: 0, 
       unlockedSkills: [],
       inventory: [],
+      skillCooldowns: {}, // 初始化
       
-      // 初始化裝備
       activeTheme: 'default',
       activeFrame: 'default',
       
@@ -133,13 +136,32 @@ export const useUserStore = create<UserState>()(
         return false;
       },
 
-      // 🔥 實作裝備邏輯
       equipItem: (itemId, category) => {
           if (category === 'theme') {
               set({ activeTheme: itemId });
           } else if (category === 'avatar') {
               set({ activeFrame: itemId });
           }
+      },
+
+      // 🔥 實作技能發動檢查
+      activateSkill: (skillId, cooldownHours) => {
+          const { skillCooldowns } = get();
+          const lastUsed = skillCooldowns[skillId] || 0;
+          const now = Date.now();
+          const cooldownMs = cooldownHours * 60 * 60 * 1000;
+
+          if (now - lastUsed >= cooldownMs) {
+              // CD 已轉好，發動成功，記錄現在時間
+              set({
+                  skillCooldowns: {
+                      ...skillCooldowns,
+                      [skillId]: now
+                  }
+              });
+              return true;
+          }
+          return false; // 還在 CD 中
       }
     }),
     { name: 'wenxin-user-storage' }
