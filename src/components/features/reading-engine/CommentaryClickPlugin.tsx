@@ -1,7 +1,7 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { CLICK_COMMAND, COMMAND_PRIORITY_LOW } from 'lexical';
 import { useEffect, useState } from 'react';
-import { Edit2, X, Send, Clock, CheckCircle, Users, Heart, AlertCircle } from 'lucide-react'; // 新增 AlertCircle
+import { Edit2, X, Send, Clock, CheckCircle, Users, Heart, AlertCircle, RefreshCw } from 'lucide-react';
 import { GamificationEngine } from '@/lib/engines/GamificationEngine';
 import { useUserStore } from '@/store/user-store';
 import { StudentAsset } from '@/lib/types/gamification';
@@ -10,9 +10,7 @@ const COMMENTS_STORAGE_KEY = 'wenxin-comments-data';
 
 interface CommentData {
   content: string;
-  // 🔥 擴充狀態定義
   status: 'draft' | 'pending' | 'verified' | 'rejected';
-  // 🔥 新增評語欄位
   feedback?: string; 
 }
 
@@ -32,58 +30,59 @@ export default function CommentaryClickPlugin() {
   const [tempContent, setTempContent] = useState("");
   const [communityNotes, setCommunityNotes] = useState<StudentAsset[]>([]);
 
-  // 🔄 1. 初始化與同步邏輯 (Sync Logic)
+  // 輔助：寫入本地儲存
+  const saveToLocal = (data: Record<string, CommentData>) => {
+    setComments(data);
+    localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(data));
+  };
+
+  // 1. 初始化讀取
   useEffect(() => {
-    // A. 先讀取本地暫存
-    let localData: Record<string, CommentData> = {};
     const savedData = localStorage.getItem(COMMENTS_STORAGE_KEY);
     if (savedData) {
-      try { localData = JSON.parse(savedData); } catch (e) { console.error(e); }
+      try { setComments(JSON.parse(savedData)); } catch (e) { console.error(e); }
     }
+  }, []);
 
-    // B. 從引擎讀取最新的資產狀態 (模擬從伺服器拉取)
-    const myRemoteAssets = GamificationEngine.getMyAssets(name);
-    
-    let hasUpdates = false;
+  // 🔥 2. 當卡片打開時，執行「精準同步」
+  useEffect(() => {
+    if (activeComment) {
+        // A. 載入社群註釋 (別人的)
+        const notes = GamificationEngine.getCommunityAnnotations(activeComment.text);
+        setCommunityNotes(notes.filter(n => n.authorName !== name));
 
-    // C. 雙向合併：
-    // 如果遠端有這個註釋，以遠端的狀態 (Verified/Rejected) 為準
-    myRemoteAssets.forEach(asset => {
-        if (asset.type === 'annotation') {
-            const local = localData[asset.id];
-            
-            // 情境 1: 本地有，但狀態不一致 (例如老師剛審核完)
-            if (local && (local.status !== asset.status || local.feedback !== asset.feedback)) {
-                localData[asset.id] = {
-                    ...local,
-                    status: asset.status,
-                    feedback: asset.feedback
-                };
-                hasUpdates = true;
-            }
-            
-            // 情境 2: 本地沒有 (例如換了電腦)，但伺服器有 -> 自動還原 (Restore)
-            if (!local) {
-                localData[asset.id] = {
-                    content: asset.contentPreview, // 從預覽還原內容
-                    status: asset.status,
-                    feedback: asset.feedback
-                };
-                hasUpdates = true;
-            }
+        // B. 檢查我自己的註釋狀態 (跟伺服器對帳)
+        // 從引擎撈出「我」針對「這個註釋ID」的資產
+        const myAssets = GamificationEngine.getMyAssets(name);
+        const remoteAsset = myAssets.find(a => a.id === activeComment.id);
+
+        if (remoteAsset) {
+            // 如果伺服器有資料，比較一下本地狀態
+            setComments(prev => {
+                const currentLocal = prev[activeComment.id];
+                
+                // 如果本地沒有，或是狀態不一致，就強制更新
+                if (!currentLocal || currentLocal.status !== remoteAsset.status || currentLocal.feedback !== remoteAsset.feedback) {
+                    const newComments = {
+                        ...prev,
+                        [activeComment.id]: {
+                            content: remoteAsset.contentPreview, // 確保內容也同步
+                            status: remoteAsset.status,
+                            feedback: remoteAsset.feedback
+                        }
+                    };
+                    // 寫入 LocalStorage 避免下次閃爍
+                    localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(newComments));
+                    console.log(`🔄 同步完成：${remoteAsset.title} -> ${remoteAsset.status}`);
+                    return newComments;
+                }
+                return prev;
+            });
         }
-    });
-
-    // D. 更新 State 與 LocalStorage
-    setComments(localData);
-    if (hasUpdates) {
-        localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(localData));
-        console.log("🔄 已同步最新審核狀態");
     }
-  }, [name]); // 依賴 name，當使用者切換時重新同步
+  }, [activeComment, name]); // 每次打開卡片都會觸發
 
-
-  // 自動存檔 (保持不變)
+  // 自動存檔 (編輯中)
   useEffect(() => {
     if (!isEditing || !activeComment) return;
     const timer = setTimeout(() => {
@@ -92,24 +91,15 @@ export default function CommentaryClickPlugin() {
             [activeComment.id]: { 
               content: tempContent, 
               status: comments[activeComment.id]?.status || 'draft',
-              feedback: comments[activeComment.id]?.feedback // 保留評語
+              feedback: comments[activeComment.id]?.feedback
             }
         };
-        setComments(newComments);
-        localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(newComments));
+        saveToLocal(newComments);
     }, 1000);
     return () => clearTimeout(timer);
   }, [tempContent, isEditing, activeComment, comments]);
 
-  // 載入社群註釋
-  useEffect(() => {
-    if (activeComment) {
-        const notes = GamificationEngine.getCommunityAnnotations(activeComment.text);
-        setCommunityNotes(notes.filter(n => n.authorName !== name));
-    }
-  }, [activeComment, name]);
-
-  // 提交給老師
+  // 提交
   const handleSubmit = () => {
     if (!activeComment) return;
     
@@ -118,11 +108,10 @@ export default function CommentaryClickPlugin() {
       [activeComment.id]: { 
         content: tempContent, 
         status: 'pending' as const,
-        feedback: undefined // 重新提交時清空舊評語
+        feedback: undefined
       }
     };
-    setComments(newComments);
-    localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(newComments));
+    saveToLocal(newComments);
     setIsEditing(false);
 
     GamificationEngine.submitAsset({
@@ -146,6 +135,7 @@ export default function CommentaryClickPlugin() {
       }
   };
 
+  // 註冊點擊
   useEffect(() => {
     return editor.registerCommand(
       CLICK_COMMAND,
@@ -167,7 +157,6 @@ export default function CommentaryClickPlugin() {
           const existing = comments[commentId];
           setTempContent(existing?.content || "");
           
-          // 如果是被退回的 (rejected)，也允許直接進入編輯模式修改
           const shouldEdit = !existing?.content || existing?.status === 'rejected';
           setIsEditing(shouldEdit); 
           
@@ -189,19 +178,17 @@ export default function CommentaryClickPlugin() {
 
   return (
     <div 
-      className="fixed z-50 w-80 bg-white rounded-xl shadow-2xl border border-indigo-100 p-0 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[500px]" // 增加高度以容納評語
+      className="fixed z-50 w-80 bg-white rounded-xl shadow-2xl border border-indigo-100 p-0 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[500px]"
       style={{ left: activeComment.x, top: activeComment.y }}
     >
       <div className="flex justify-between items-center p-3 bg-slate-50 border-b border-slate-100 shrink-0">
         <h4 className="font-bold text-indigo-700 text-sm flex items-center gap-2">
           {activeComment.text}
-          {/* 🔥 狀態標籤顯示邏輯 */}
           {currentStatus === 'pending' && <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded flex items-center gap-1"><Clock className="w-3 h-3"/>審核中</span>}
           {currentStatus === 'verified' && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded flex items-center gap-1"><CheckCircle className="w-3 h-3"/>已認證</span>}
           {currentStatus === 'rejected' && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded flex items-center gap-1"><AlertCircle className="w-3 h-3"/>需修改</span>}
         </h4>
         <div className="flex gap-1">
-          {/* 允許編輯的情況：草稿 OR 被退回 */}
           {!isEditing && (currentStatus === 'draft' || currentStatus === 'rejected') && (
             <button onClick={() => setIsEditing(true)} className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded">
               <Edit2 className="w-3.5 h-3.5" />
@@ -214,11 +201,11 @@ export default function CommentaryClickPlugin() {
       </div>
 
       <div className="overflow-y-auto p-4 space-y-6">
-        {/* 我的筆記區 */}
         <div className="space-y-2">
-            <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">我的筆記</h5>
+            <div className="flex justify-between items-center">
+                <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">我的筆記</h5>
+            </div>
             
-            {/* 🔥 如果被退回，顯示老師的評語 */}
             {currentStatus === 'rejected' && currentData.feedback && (
                 <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-xs text-red-700 mb-2 flex gap-2 items-start">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -257,7 +244,6 @@ export default function CommentaryClickPlugin() {
             )}
         </div>
 
-        {/* 社群共構區 (保持不變) */}
         {communityNotes.length > 0 && (
             <div className="space-y-3 pt-4 border-t border-slate-100">
                 <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
