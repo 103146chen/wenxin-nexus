@@ -3,7 +3,7 @@ import { LayoutDashboard, BookOpen, GitGraph, Library } from "lucide-react";
 
 const menuItems = [
   { name: "儀表板", icon: LayoutDashboard, href: "/dashboard" },
-  { name: "沉浸式閱讀", icon: BookOpen, href: "/reading/demo" },
+  { name: "沉浸式閱讀", icon: BookOpen, href: "/reading" },
   { name: "邏輯思辨", icon: GitGraph, href: "/logic-map" },
   { name: "虛擬書齋", icon: Library, href: "/study" },
 ];
