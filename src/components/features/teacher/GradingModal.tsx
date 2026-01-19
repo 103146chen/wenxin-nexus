@@ -45,7 +45,11 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
             
             <div className="max-w-3xl mx-auto bg-white min-h-full rounded-xl shadow-sm p-8 border border-slate-200">
                 <header className="mb-8 border-b border-slate-100 pb-4">
-                    <h2 className="text-2xl font-bold text-slate-900 mb-2">《{lesson?.title}》{item.type === 'logic-map' ? '邏輯思辨結構圖' : '讀後反思'}</h2>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                        《{lesson?.title}》
+                        {item.type === 'logic-map' ? '邏輯思辨結構圖' : 
+                        item.type === 'annotation' ? '閱讀重點筆記' : '讀後反思'}
+                    </h2>
                     <div className="flex items-center gap-2 text-slate-500 text-sm">
                         <span>作者：{item.studentName}</span>
                         <span>•</span>
@@ -76,6 +80,44 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
                             </div>
                         </div>
                         <p className="text-slate-400 italic text-sm mt-8">* 此為前端原型模擬畫面，實際將顯示學生繪製的 Canvas 截圖 *</p>
+                    </div>
+                ) : item.type === 'annotation' ? (
+                    // 🔥 新增：閱讀筆記渲染
+                    <div className="space-y-6">
+                        <div className="bg-blue-50 text-blue-800 p-4 rounded-lg border border-blue-200 text-sm mb-4">
+                            <span className="font-bold">作業說明：</span> 學生提交的重點標註與心得筆記。
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {(() => {
+                                try {
+                                    const notes = JSON.parse(item.contentMock);
+                                    if(!Array.isArray(notes)) return <div className="text-red-500">資料格式錯誤</div>;
+                                    
+                                    return notes.map((note: any, idx: number) => (
+                                        <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={`w-3 h-3 rounded-full ${
+                                                    note.color === 'yellow' ? 'bg-yellow-400' :
+                                                    note.color === 'green' ? 'bg-green-400' : 'bg-pink-400'
+                                                }`}></span>
+                                                <span className="text-xs font-bold text-slate-400 uppercase">
+                                                    {note.color === 'yellow' ? '重點' : note.color === 'green' ? '疑問' : '佳句'}
+                                                </span>
+                                            </div>
+                                            <div className="font-serif text-lg font-bold text-slate-800 mb-2 border-l-4 border-slate-300 pl-3">
+                                                {note.text}
+                                            </div>
+                                            <div className="text-slate-600 bg-slate-50 p-3 rounded-lg text-sm">
+                                                {note.comment || '（無文字心得）'}
+                                            </div>
+                                        </div>
+                                    ));
+                                } catch(e) {
+                                    return <div className="text-slate-400 italic">無法預覽內容 (解析錯誤)</div>;
+                                }
+                            })()}
+                        </div>
                     </div>
                 ) : (
                     <div className="prose prose-slate max-w-none">

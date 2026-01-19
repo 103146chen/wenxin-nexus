@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ClassRoom } from '@/lib/types/class-management';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
+import { StudentAsset } from '@/lib/types/gamification';
 
 export type AssignmentLevel = 'A' | 'B' | 'C';
 
@@ -12,7 +13,8 @@ export interface PendingItem {
   studentName: string;
   studentAvatar: string;
   lessonId: string;
-  type: 'logic-map' | 'reflection';
+  // 🔥 更新：加入 annotation 類型
+  type: 'logic-map' | 'reflection' | 'annotation';
   submittedAt: string;
   contentMock: string;
 }
@@ -33,13 +35,20 @@ interface TeacherState {
   addClass: (name: string, semester: string) => void;
   assignTask: (assignment: Assignment) => void;
   getAssignment: (classId: string, lessonId: string) => Assignment | undefined;
-  
   getPendingSubmissions: () => PendingItem[];
   gradeSubmission: (item: PendingItem, status: 'verified' | 'rejected', feedback: string) => void;
-  
-  // 🔥 修復：補回遺漏的函數定義
   getClassById: (id: string) => ClassRoom | undefined;
 }
+
+const getRealSubmissions = (): StudentAsset[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem('wenxin-assets');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
 
 export const useTeacherStore = create<TeacherState>((set, get) => ({
   classes: MOCK_CLASSES,
@@ -74,50 +83,105 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
   getPendingSubmissions: () => {
       const { classes } = get();
       const pendingItems: PendingItem[] = [];
+      const realAssets = getRealSubmissions();
 
       classes.forEach(cls => {
           cls.students.forEach(stu => {
-              Object.entries(cls.progressMatrix[stu.id]).forEach(([lessonId, progress]) => {
-                  if (progress.logicMapStatus === 'pending') {
-                      pendingItems.push({
-                          classId: cls.id,
-                          className: cls.name,
-                          studentId: stu.id,
-                          studentName: stu.name,
-                          studentAvatar: stu.avatar,
-                          lessonId,
-                          type: 'logic-map',
-                          submittedAt: new Date().toISOString(),
-                          contentMock: '邏輯圖JSON模擬資料...'
-                      });
+              const realStudentAssets = realAssets.filter(
+                  a => a.authorName === stu.name && a.status === 'pending'
+              );
+
+              realStudentAssets.forEach(asset => {
+                  let extractedLessonId = 'lesson-1';
+                  // 嘗試從 ID 中解析 lessonId (格式通常是 type-lessonId)
+                  if (asset.id.includes('lesson-')) {
+                      const match = asset.id.match(/(lesson-\d+)/);
+                      if (match) extractedLessonId = match[1];
                   }
+
+                  pendingItems.push({
+                      classId: cls.id,
+                      className: cls.name,
+                      studentId: stu.id,
+                      studentName: stu.name,
+                      studentAvatar: stu.avatar,
+                      lessonId: extractedLessonId,
+                      // 🔥 更新：類型判斷
+                      type: asset.type === 'logic-map' ? 'logic-map' : 
+                            asset.type === 'annotation' ? 'annotation' : 'reflection',
+                      submittedAt: asset.createdAt,
+                      contentMock: asset.contentPreview
+                  });
               });
+
+              // Mock Data 部分 (維持不變)
+              if (realStudentAssets.length === 0) {
+                  Object.entries(cls.progressMatrix[stu.id]).forEach(([lessonId, progress]) => {
+                      if (progress.logicMapStatus === 'pending') {
+                          pendingItems.push({
+                              classId: cls.id,
+                              className: cls.name,
+                              studentId: stu.id,
+                              studentName: stu.name,
+                              studentAvatar: stu.avatar,
+                              lessonId,
+                              type: 'logic-map',
+                              submittedAt: new Date().toISOString(),
+                              contentMock: '（此為系統生成的模擬資料，非真實提交）'
+                          });
+                      }
+                  });
+              }
           });
       });
       return pendingItems;
   },
 
-  gradeSubmission: (item, status, feedback) => set(state => {
-      const newClasses = state.classes.map(cls => {
-          if (cls.id !== item.classId) return cls;
-          
-          return {
-              ...cls,
-              progressMatrix: {
-                  ...cls.progressMatrix,
-                  [item.studentId]: {
-                      ...cls.progressMatrix[item.studentId],
-                      [item.lessonId]: {
-                          ...cls.progressMatrix[item.studentId][item.lessonId],
-                          logicMapStatus: item.type === 'logic-map' ? status : cls.progressMatrix[item.studentId][item.lessonId].logicMapStatus,
+  gradeSubmission: (item, status, feedback) => {
+      // 1. 更新 Mock Store
+      set(state => {
+          const newClasses = state.classes.map(cls => {
+              if (cls.id !== item.classId) return cls;
+              return {
+                  ...cls,
+                  progressMatrix: {
+                      ...cls.progressMatrix,
+                      [item.studentId]: {
+                          ...cls.progressMatrix[item.studentId],
+                          [item.lessonId]: {
+                              ...cls.progressMatrix[item.studentId][item.lessonId],
+                              logicMapStatus: item.type === 'logic-map' ? status : cls.progressMatrix[item.studentId][item.lessonId].logicMapStatus,
+                          }
                       }
                   }
-              }
-          };
+              };
+          });
+          return { classes: newClasses };
       });
-      return { classes: newClasses };
-  }),
 
-  // 🔥 修復：實作該函數
+      // 2. 更新 真實資料
+      if (typeof window !== 'undefined') {
+          try {
+              const raw = localStorage.getItem('wenxin-assets');
+              if (raw) {
+                  const assets: StudentAsset[] = JSON.parse(raw);
+                  const targetIndex = assets.findIndex(
+                      a => a.authorName === item.studentName && 
+                           (a.type === item.type) &&
+                           a.status === 'pending'
+                  );
+
+                  if (targetIndex !== -1) {
+                      assets[targetIndex].status = status;
+                      assets[targetIndex].feedback = feedback;
+                      localStorage.setItem('wenxin-assets', JSON.stringify(assets));
+                  }
+              }
+          } catch (e) {
+              console.error('更新真實資料失敗', e);
+          }
+      }
+  },
+
   getClassById: (id) => get().classes.find(c => c.id === id),
 }));

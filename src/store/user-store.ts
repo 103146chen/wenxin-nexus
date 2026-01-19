@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
+import { Annotation } from '@/lib/types/gamification';
 
 // 定義角色型別
 export type UserRole = 'student' | 'teacher' | 'guest';
@@ -9,9 +10,9 @@ export type UserRole = 'student' | 'teacher' | 'guest';
 interface QuizRecord {
   lessonId: string;
   highestScore: number;
-  isFinished: boolean; // 是否已完成過(領過首通獎勵)
-  wrongQuestionIds: string[]; // 錯題 ID 列表 (用於訂正模式)
-  correctionCount: Record<string, number>; // 每個錯題訂正過的次數
+  isFinished: boolean; 
+  wrongQuestionIds: string[]; 
+  correctionCount: Record<string, number>; 
 }
 
 interface UserState {
@@ -34,6 +35,9 @@ interface UserState {
   // 測驗紀錄
   quizRecords: Record<string, QuizRecord>;
 
+  // 🔥 新增：閱讀註解紀錄 (Key: lessonId)
+  annotations: Record<string, Annotation[]>;
+
   // 學生所屬班級 ID
   classId: string | null;
 
@@ -51,15 +55,14 @@ interface UserState {
   equipItem: (itemId: string, category: 'theme' | 'avatar') => void;
   activateSkill: (skillId: string, cooldownHours: number) => boolean;
 
-  // 更新測驗紀錄
   updateQuizRecord: (lessonId: string, score: number, wrongIds: string[], isFirstTime: boolean) => void;
-  // 紀錄訂正成功
   correctMistake: (lessonId: string, questionId: string) => void;
   
-  // 加入班級動作
-  joinClass: (code: string) => boolean;
+  // 🔥 新增：註解操作
+  addAnnotation: (lessonId: string, annotation: Omit<Annotation, 'id' | 'createdAt' | 'type'>) => void;
+  removeAnnotation: (lessonId: string, id: string) => void;
 
-  // 登入與登出
+  joinClass: (code: string) => boolean;
   login: (role: UserRole, username?: string) => void;
   logout: () => void;
 }
@@ -88,8 +91,8 @@ export const useUserStore = create<UserState>()(
       streakDays: 1,
       lastLoginDate: new Date().toISOString().split('T')[0],
       quizRecords: {},
+      annotations: {}, // 初始化
       
-      // 🔥 預設無班級
       classId: null,
 
       addXp: (amount) => {
@@ -198,9 +201,39 @@ export const useUserStore = create<UserState>()(
           });
       },
 
-      // 🔥 實作：加入班級
+      // 🔥 新增：新增註解
+      addAnnotation: (lessonId, ann) => {
+          set(state => {
+              const current = state.annotations[lessonId] || [];
+              const newAnn: Annotation = {
+                  ...ann,
+                  id: `ann-${Date.now()}`,
+                  type: 'student',
+                  createdAt: new Date().toISOString()
+              };
+              return {
+                  annotations: {
+                      ...state.annotations,
+                      [lessonId]: [...current, newAnn]
+                  }
+              };
+          });
+      },
+
+      // 🔥 新增：移除註解
+      removeAnnotation: (lessonId, id) => {
+          set(state => {
+              const current = state.annotations[lessonId] || [];
+              return {
+                  annotations: {
+                      ...state.annotations,
+                      [lessonId]: current.filter(a => a.id !== id)
+                  }
+              };
+          });
+      },
+
       joinClass: (code) => {
-          // 模擬後端驗證：檢查代碼是否存在於 Mock Data
           const targetClass = MOCK_CLASSES.find(c => c.code === code);
           
           if (targetClass) {
@@ -216,14 +249,12 @@ export const useUserStore = create<UserState>()(
           set({ 
               isLoggedIn: true, 
               role: role,
-              // 如果是老師，預設叫孔丘；如果是學生，預設叫李白 (或傳入的名字)
               name: username || (role === 'teacher' ? '孔丘' : '李白'),
-              avatar: role === 'teacher' ? 'scholar_m' : 'scholar_f', // 簡單區分頭像
+              avatar: role === 'teacher' ? 'scholar_m' : 'scholar_f',
               title: role === 'teacher' ? '至聖先師' : '詩仙'
           });
       },
 
-      // 🔥 實作登出
       logout: () => {
           set({ isLoggedIn: false, role: 'guest', classId: null });
       }
