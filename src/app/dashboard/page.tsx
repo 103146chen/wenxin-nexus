@@ -268,9 +268,9 @@ export default function TeacherDashboard() {
                                         ) : '-'}
                                     </td>
                                     <td className="p-4">
-                                        <button className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-1 rounded transition">
-                                            查看詳情
-                                        </button>
+                                        <Link href={`/teacher/verification?studentId=${student.id}`} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-1 rounded transition inline-block">
+                                            批閱作業
+                                        </Link>
                                     </td>
                                 </tr>
                             )

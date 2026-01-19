@@ -1,24 +1,31 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
+'use client';
+
+import { useUserStore } from "@/store/user-store";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { Loader2 } from "lucide-react";
 
 export default function Home() {
+  const { isLoggedIn, role } = useUserStore();
+  const router = useRouter();
+
+  useEffect(() => {
+    // 如果沒登入，去登入頁
+    if (!isLoggedIn) {
+      router.push('/login');
+    } else {
+      // 根據角色導向首頁
+      if (role === 'teacher') {
+          router.push('/dashboard');
+      } else {
+          router.push('/study'); // 學生首頁預設去書齋
+      }
+    }
+  }, [isLoggedIn, role, router]);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-950 text-white p-4">
-      <div className="text-center space-y-6 max-w-2xl">
-        <h1 className="text-5xl font-bold tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
-          文心匯 Wenxin Nexus
-        </h1>
-        <p className="text-slate-400 text-lg">
-          結合生成式 AI 與遊戲化的下一代高中國文互動式學習平台。
-        </p>
-        <div className="pt-4">
-          <Link href="/dashboard">
-            <Button size="lg" className="text-lg px-8 py-6 rounded-full font-bold">
-              進入儀表板
-            </Button>
-          </Link>
-        </div>
-      </div>
-    </main>
+    <div className="h-screen w-screen flex items-center justify-center bg-slate-900 text-white">
+      <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+    </div>
   );
 }

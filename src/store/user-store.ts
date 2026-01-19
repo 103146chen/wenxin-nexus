@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 
+// 定義角色型別
+export type UserRole = 'student' | 'teacher' | 'guest';
+
 // 定義測驗紀錄結構
 interface QuizRecord {
   lessonId: string;
@@ -31,8 +34,12 @@ interface UserState {
   // 測驗紀錄
   quizRecords: Record<string, QuizRecord>;
 
-  // 🔥 新增：學生所屬班級 ID
+  // 學生所屬班級 ID
   classId: string | null;
+
+  // 登入相關狀態
+  isLoggedIn: boolean;
+  role: UserRole;
 
   // Actions
   addXp: (amount: number) => void;
@@ -49,8 +56,12 @@ interface UserState {
   // 紀錄訂正成功
   correctMistake: (lessonId: string, questionId: string) => void;
   
-  // 🔥 新增：加入班級動作
+  // 加入班級動作
   joinClass: (code: string) => boolean;
+
+  // 登入與登出
+  login: (role: UserRole, username?: string) => void;
+  logout: () => void;
 }
 
 const calculateLevelFromXp = (xp: number) => Math.floor(0.1 * Math.sqrt(xp)) || 1;
@@ -59,6 +70,8 @@ const calculateXpForNextLevel = (currentLevel: number) => Math.pow((currentLevel
 export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
+      isLoggedIn: false,
+      role: 'guest',
       name: '陌生的旅人',
       title: '初入文壇',
       avatar: 'scholar_m',
@@ -199,6 +212,21 @@ export const useUserStore = create<UserState>()(
               return false;
           }
       },
+      login: (role, username) => {
+          set({ 
+              isLoggedIn: true, 
+              role: role,
+              // 如果是老師，預設叫孔丘；如果是學生，預設叫李白 (或傳入的名字)
+              name: username || (role === 'teacher' ? '孔丘' : '李白'),
+              avatar: role === 'teacher' ? 'scholar_m' : 'scholar_f', // 簡單區分頭像
+              title: role === 'teacher' ? '至聖先師' : '詩仙'
+          });
+      },
+
+      // 🔥 實作登出
+      logout: () => {
+          set({ isLoggedIn: false, role: 'guest', classId: null });
+      }
     }),
     { name: 'wenxin-user-storage' }
   )

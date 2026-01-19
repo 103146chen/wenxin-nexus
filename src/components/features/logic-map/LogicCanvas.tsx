@@ -20,6 +20,7 @@ import 'reactflow/dist/style.css';
 import { Plus, Send, Cloud, Loader2, Clock, CheckCircle, AlertCircle, Hexagon, Circle, RotateCcw } from 'lucide-react'; 
 import { GamificationEngine } from '@/lib/engines/GamificationEngine';
 import { useUserStore } from '@/store/user-store';
+import { useTeacherStore } from '@/store/teacher-store'; 
 import { AssetStatus } from '@/lib/types/gamification';
 import TemplateSelector from './TemplateSelector';
 import { LogicTemplate } from '@/lib/data/logic-templates';
@@ -30,7 +31,9 @@ interface LogicCanvasProps {
 }
 
 function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
-  const { name, unlockedSkills } = useUserStore(); 
+  const { name, unlockedSkills, classId } = useUserStore(); 
+  const { getClassById } = useTeacherStore();
+
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const { setViewport, toObject, fitView, getViewport } = useReactFlow();
@@ -46,37 +49,22 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
   const [editLabel, setEditLabel] = useState('');
 
   const isLocked = status === 'pending' || status === 'verified';
+  
   const assetId = `logic-${lessonId}`;
   const STORAGE_KEY = `logic-map-${lessonId}`;
   const SNAPSHOT_KEY = `logic-map-img-${lessonId}`;
-
   const hasAdvancedLogic = unlockedSkills.includes('logic-2');
 
-  // 🔥 修復後的截圖函式
   const captureAndSave = useCallback(async () => {
-    // 1. 取得畫布容器 (.react-flow)
-    // 這裡我們抓取包含節點的視口部分，避免抓到外層的 padding
     const flowElement = document.querySelector('.react-flow') as HTMLElement;
     if (!flowElement) return;
-
     const originalViewport = getViewport();
-
     try {
-      // 2. 自動聚焦 (Fit View)
-      // 使用更寬鬆的 padding 確保邊緣不會被切掉
       fitView({ padding: 0.5, duration: 0 }); 
-
-      // 等待 React Flow 更新 DOM (增加延遲以確保 SVG markers 渲染完成)
       await new Promise(resolve => setTimeout(resolve, 100));
-
-      // 3. 截圖
-      // 🔥 修正重點：移除 width/height/style 的強制設定
-      // 讓它抓取當前容器的自然大小，避免 SVG 座標錯亂
       const dataUrl = await toPng(flowElement, {
         backgroundColor: '#ffffff',
-        // 提升解析度 (2倍)，這樣即使容器較小，圖片依然清晰
         pixelRatio: 2, 
-        // 過濾掉 UI 控制項
         filter: (node) => {
             const classList = node.classList;
             if (!classList) return true;
@@ -85,19 +73,15 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
                    !classList.contains('react-flow__minimap');
         }
       });
-
       localStorage.setItem(SNAPSHOT_KEY, dataUrl);
       console.log('邏輯圖快照已儲存 (Auto)');
-
     } catch (err) {
       console.error('截圖失敗', err);
     } finally {
-      // 4. 恢復使用者原本的視角
       setViewport(originalViewport);
     }
   }, [SNAPSHOT_KEY, fitView, getViewport, setViewport]);
 
-  // 初始化
   useEffect(() => {
     let localData: any = null;
     const savedString = localStorage.getItem(STORAGE_KEY);
@@ -106,39 +90,50 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
     const myAssets = GamificationEngine.getMyAssets(name);
     const remoteAsset = myAssets.find(a => a.id === assetId);
 
+    let teacherStatus: AssetStatus | undefined = undefined;
+    if (classId) {
+        const classData = getClassById(classId);
+        // 🔥 修復：加上 (s: any) 避免 TypeScript 報錯
+        const student = classData?.students.find((s: any) => s.name === name);
+        if (student && classData) {
+             const progress = classData.progressMatrix[student.id]?.[lessonId];
+             if (progress?.logicMapStatus) {
+                 teacherStatus = progress.logicMapStatus;
+             }
+        }
+    }
+
     let finalNodes = [];
     let finalEdges = [];
     let finalStatus: AssetStatus = 'draft';
     let finalFeedback = undefined;
     let finalViewport = { x: 0, y: 0, zoom: 1 };
-    
     let hasData = false;
 
-    if (remoteAsset) {
+    if (teacherStatus) {
+        finalStatus = teacherStatus;
+        if (teacherStatus === 'rejected') finalFeedback = "作業未達標，請根據上方指示修改後重新提交。"; 
+        else if (teacherStatus === 'verified') finalFeedback = "作業已通過！做得很好！";
+    } else if (remoteAsset) {
         finalStatus = remoteAsset.status;
         finalFeedback = remoteAsset.feedback;
-        if (!localData && remoteAsset.contentPreview) {
-            try {
-                const restoredData = JSON.parse(remoteAsset.contentPreview);
-                if (restoredData.nodes) {
-                    finalNodes = restoredData.nodes;
-                    finalEdges = restoredData.edges || [];
-                    finalViewport = restoredData.viewport || finalViewport;
-                    hasData = true;
-                }
-            } catch (e) {}
-        } else if (localData) {
-            finalNodes = localData.nodes || [];
-            finalEdges = localData.edges || [];
-            finalViewport = localData.viewport || finalViewport;
-            hasData = true;
-        }
     } else if (localData) {
+        finalStatus = localData.status || 'draft';
+    }
+
+    if (localData) {
         finalNodes = localData.nodes || [];
         finalEdges = localData.edges || [];
-        finalStatus = localData.status || 'draft';
         finalViewport = localData.viewport || finalViewport;
         hasData = true;
+    } else if (remoteAsset && remoteAsset.contentPreview) {
+        try {
+            const restoredData = JSON.parse(remoteAsset.contentPreview);
+            finalNodes = restoredData.nodes;
+            finalEdges = restoredData.edges || [];
+            finalViewport = restoredData.viewport || finalViewport;
+            hasData = true;
+        } catch (e) {}
     }
 
     setNodes(finalNodes);
@@ -152,14 +147,13 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
     }
     
     setTimeout(() => { hasLoaded.current = true; }, 500);
-  }, [lessonId, name, setNodes, setEdges, setViewport, assetId, STORAGE_KEY]);
+  }, [lessonId, name, setNodes, setEdges, setViewport, assetId, STORAGE_KEY, classId, getClassById]);
 
-  // 自動存檔 + 截圖
+  // 自動存檔
   useEffect(() => {
     if (!hasLoaded.current || isLocked || showTemplateSelector) return;
     setSaveStatus('saving');
     
-    // 延長 debounce 時間，避免頻繁截圖造成卡頓
     const timer = setTimeout(() => {
       const flowData = {
         nodes,
@@ -169,9 +163,7 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
         feedback
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(flowData));
-      
       captureAndSave(); 
-
       setSaveStatus('saved');
     }, 2000); 
     return () => clearTimeout(timer);
@@ -184,12 +176,12 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
       return;
     }
     
-    // 提交前強制截圖一次，並等待完成
     await captureAndSave();
 
     const fullData = { nodes, edges, viewport: toObject().viewport };
     const localPayload = { ...fullData, status: 'pending', feedback: undefined };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(localPayload));
+    
     setStatus('pending');
     setFeedback(undefined);
 
@@ -202,7 +194,7 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
       authorName: name
     });
 
-    alert('🚀 已提交邏輯圖！(獲得 +10 XP)');
+    alert('🚀 已提交邏輯圖！等待老師批閱。');
   }, [nodes, edges, lessonId, toObject, name, assetId, STORAGE_KEY, captureAndSave]);
 
   const handleTemplateSelect = (template: LogicTemplate) => {
@@ -305,7 +297,7 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
              <div className="bg-white p-2 rounded-lg shadow-md border border-slate-100 flex gap-2 items-center">
                 {status === 'pending' && <span className="flex items-center text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded"><Clock className="w-3 h-3 mr-1"/>審核中</span>}
                 {status === 'verified' && <span className="flex items-center text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded"><CheckCircle className="w-3 h-3 mr-1"/>已認證</span>}
-                {status === 'rejected' && <span className="flex items-center text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded"><AlertCircle className="w-3 h-3 mr-1"/>需修改</span>}
+                {status === 'rejected' && <span className="flex items-center text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded animate-pulse"><AlertCircle className="w-3 h-3 mr-1"/>需訂正</span>}
 
                 {!isLocked && (
                     <>
@@ -336,13 +328,25 @@ function LogicCanvasContent({ lessonId }: LogicCanvasProps) {
              </div>
           </Panel>
 
-          {status === 'rejected' && feedback && (
-             <Panel position="bottom-center" className="mb-8">
-                 <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl shadow-lg flex items-start gap-3 max-w-md">
-                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          {status === 'rejected' && (
+             <Panel position="bottom-center" className="mb-8 w-full flex justify-center">
+                 <div className="bg-red-50 border-2 border-red-200 text-red-800 p-4 rounded-xl shadow-lg flex items-start gap-3 max-w-lg w-full animate-in slide-in-from-bottom-5">
+                    <AlertCircle className="w-6 h-6 shrink-0 mt-0.5 text-red-600" />
                     <div>
-                        <h4 className="font-bold text-sm mb-1">老師的回饋：</h4>
-                        <p className="text-sm leading-relaxed">{feedback}</p>
+                        <h4 className="font-bold text-sm mb-1 text-red-700">⚠️ 老師的修改建議：</h4>
+                        <p className="text-sm leading-relaxed">{feedback || "內容尚有改進空間，請參考課文重點後重新調整結構。"}</p>
+                    </div>
+                 </div>
+             </Panel>
+          )}
+
+          {status === 'verified' && (
+             <Panel position="bottom-center" className="mb-8 w-full flex justify-center">
+                 <div className="bg-green-50 border-2 border-green-200 text-green-800 p-4 rounded-xl shadow-lg flex items-start gap-3 max-w-lg w-full">
+                    <CheckCircle className="w-6 h-6 shrink-0 mt-0.5 text-green-600" />
+                    <div>
+                        <h4 className="font-bold text-sm mb-1 text-green-700">🎉 太棒了！作業已通過</h4>
+                        <p className="text-sm leading-relaxed">{feedback || "結構清晰，論點完整，是一份優秀的作業！"}</p>
                     </div>
                  </div>
              </Panel>

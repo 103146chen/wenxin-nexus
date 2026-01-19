@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, GitGraph, BrainCircuit, PenTool, MessageSquare, Book, ChevronRight, Download, Loader2, Target } from "lucide-react";
+import { ArrowLeft, BookOpen, GitGraph, BrainCircuit, PenTool, MessageSquare, Book, ChevronRight, Download, Loader2, Target, AlertCircle, CheckCircle } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import ChatInterface from "@/components/features/virtual-study/ChatInterface";
 import ReflectionEditor from "@/components/features/reflection/ReflectionEditor";
 import { Lesson, getLessonsByAuthor } from "@/lib/data/lessons";
 import { useUserStore } from "@/store/user-store";
-import { useTeacherStore } from "@/store/teacher-store"; // 🔥 引入 TeacherStore
+import { useTeacherStore } from "@/store/teacher-store"; 
 import { GamificationEngine } from "@/lib/engines/GamificationEngine";
 import { PortfolioReport } from "@/components/features/portfolio/PortfolioReport";
 import { toPng } from 'html-to-image';
@@ -29,9 +29,15 @@ const MOOD_MAP: Record<string, string> = {
     'calm': '平靜自在'
 };
 
+const levelBadgeColor: Record<string, string> = {
+    'A': 'bg-purple-100 text-purple-700 border-purple-200',
+    'B': 'bg-blue-100 text-blue-700 border-blue-200',
+    'C': 'bg-green-100 text-green-700 border-green-200'
+};
+
 export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps) {
   const { name, title, level, quizRecords, classId } = useUserStore();
-  const { getAssignment } = useTeacherStore();
+  const { getAssignment, getClassById } = useTeacherStore();
   const authorLessons = getLessonsByAuthor(initialLesson.author);
   
   const [selectedLesson, setSelectedLesson] = useState<Lesson>(initialLesson);
@@ -39,10 +45,22 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
   const [isExporting, setIsExporting] = useState(false);
   const [logicMapImage, setLogicMapImage] = useState<string | undefined>(undefined);
 
-  // 取得目前是否有老師派發的任務
-  const assignment = classId ? getAssignment(classId, selectedLesson.id) : undefined;
-
   const reportRef = useRef<HTMLDivElement>(null);
+
+  const teacherFeedback = useMemo(() => {
+    if (!classId) return null;
+    const classData = getClassById(classId);
+    if (!classData) return null;
+
+    // 🔥 修復：加上 (s: any)
+    const studentRecord = classData.students.find((s: any) => s.name === name);
+    if (!studentRecord) return null;
+
+    const progress = classData.progressMatrix[studentRecord.id]?.[selectedLesson.id];
+    return progress;
+  }, [classId, name, selectedLesson.id, getClassById]);
+
+  const assignment = classId ? getAssignment(classId, selectedLesson.id) : undefined;
 
   useEffect(() => {
       const snapshot = localStorage.getItem(`logic-map-img-${selectedLesson.id}`);
@@ -52,12 +70,8 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
   const handleExport = async () => {
     if (!reportRef.current) return;
     setIsExporting(true);
-
     try {
-      // 1. 等待渲染
       await new Promise(resolve => setTimeout(resolve, 800)); 
-
-      // 2. 截圖
       const dataUrl = await toPng(reportRef.current, {
         backgroundColor: '#ffffff',
         cacheBust: true, 
@@ -71,22 +85,15 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
            transform: 'none',
         }
       });
-
-      if (dataUrl.length < 5000) {
-          throw new Error(`截圖失敗，資料長度過短 (${dataUrl.length})`);
-      }
-
-      // 3. 生成 PDF
+      if (dataUrl.length < 5000) throw new Error(`截圖失敗`);
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      
       pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`學習歷程_${selectedLesson.title}_${name}.pdf`);
-
     } catch (error) {
-      console.error('匯出失敗詳細資訊:', error);
-      alert('匯出失敗。請稍等幾秒鐘讓圖片載入完畢後再試一次。');
+      console.error(error);
+      alert('匯出失敗，請重試。');
     } finally {
       setIsExporting(false);
     }
@@ -112,9 +119,7 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
               };
           }
       }
-
       const quizData = quizRecords[selectedLesson.id];
-
       return {
           user: { name, title, level },
           lesson: selectedLesson,
@@ -126,29 +131,10 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
   const reportData = getReportData();
 
-  // 定義任務難度標籤顏色
-  const levelBadgeColor: Record<string, string> = {
-      'A': 'bg-purple-100 text-purple-700 border-purple-200',
-      'B': 'bg-blue-100 text-blue-700 border-blue-200',
-      'C': 'bg-green-100 text-green-700 border-green-200'
-  };
-
   return (
     <div className="flex min-h-screen bg-slate-50 relative z-0">
       
-      {/* 隱藏的報表元件 (Fixed + Off-screen) */}
-      <div style={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: '-10000px', 
-          width: '794px', 
-          height: '1123px',
-          zIndex: 100,      
-          opacity: 1,       
-          background: 'white',
-          pointerEvents: 'none',
-          overflow: 'hidden'
-      }}>
+      <div style={{ position: 'fixed', top: 0, left: '-10000px', width: '794px', height: '1123px', zIndex: 100, opacity: 1, background: 'white', pointerEvents: 'none', overflow: 'hidden' }}>
           <PortfolioReport ref={reportRef} {...reportData} />
       </div>
 
@@ -164,18 +150,13 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
             <p className="text-lg text-slate-600">與文豪跨時空對話，探討文學奧秘。</p>
           </div>
           
-          <button 
-            onClick={handleExport}
-            disabled={isExporting}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl shadow-lg hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-wait"
-          >
+          <button onClick={handleExport} disabled={isExporting} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl shadow-lg hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-wait">
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin"/> : <Download className="w-4 h-4"/>}
             {isExporting ? '生成中...' : '匯出學習歷程 PDF'}
           </button>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* 左側欄 */}
           <div className="lg:col-span-8">
             <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[650px] flex flex-col relative">
                 <div className="flex border-b border-slate-100 bg-slate-50/50">
@@ -211,7 +192,6 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
             </section>
           </div>
 
-          {/* 右側欄 */}
           <div className="lg:col-span-4 space-y-8">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-bold text-slate-500 text-xs uppercase tracking-wider mb-4 flex items-center gap-2"><Book className="w-4 h-4" /> 收錄著作</h3>
@@ -227,15 +207,11 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500" key={`tasks-${selectedLesson.id}`}>
                 
-                {/* 🔥 新增：任務提示 Banner */}
                 <div className="flex justify-between items-end mb-2">
-                    <h3 className="font-bold text-slate-500 text-xs uppercase tracking-wider">
-                        《{selectedLesson.title}》修習任務
-                    </h3>
+                    <h3 className="font-bold text-slate-500 text-xs uppercase tracking-wider">《{selectedLesson.title}》修習任務</h3>
                     {assignment && (
                         <span className={`text-[10px] font-bold px-2 py-1 rounded border flex items-center gap-1 ${levelBadgeColor[assignment.level]}`}>
-                            <Target className="w-3 h-3" />
-                            教師指派：{assignment.level} 級任務
+                            <Target className="w-3 h-3" /> 教師指派：{assignment.level} 級
                         </span>
                     )}
                 </div>
@@ -247,16 +223,30 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                    </div>
                 </Link>
                 
-                <Link href={`/logic-map/${selectedLesson.id}`} className="group block bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:border-orange-300 hover:shadow-md transition">
-                   <div className="flex items-center gap-3">
+                <Link href={`/logic-map/${selectedLesson.id}`} className={`group block bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition relative overflow-hidden ${
+                    teacherFeedback?.logicMapStatus === 'rejected' ? 'border-red-300 bg-red-50/50' : 
+                    teacherFeedback?.logicMapStatus === 'verified' ? 'border-green-300 bg-green-50/50' : 
+                    'border-slate-200 hover:border-orange-300'
+                }`}>
+                   <div className="flex items-center gap-3 relative z-10">
                        <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center"><GitGraph className="w-5 h-5" /></div>
                        <div className="flex-1">
                            <div className="flex justify-between items-center">
                                 <h3 className="font-bold text-slate-800 text-sm">邏輯思辨</h3>
-                                {/* 如果是 A 級任務，顯示必做 */}
                                 {assignment?.level === 'A' && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 rounded font-bold">必做</span>}
                            </div>
-                           <p className="text-[10px] text-slate-500">繪製結構、分析論點</p>
+                           
+                           {teacherFeedback?.logicMapStatus === 'rejected' ? (
+                               <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1">
+                                   <AlertCircle className="w-3 h-3"/> 老師已退回，請訂正
+                               </div>
+                           ) : teacherFeedback?.logicMapStatus === 'verified' ? (
+                               <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1">
+                                   <CheckCircle className="w-3 h-3"/> 作業已通過
+                               </div>
+                           ) : (
+                               <p className="text-[10px] text-slate-500">繪製結構、分析論點</p>
+                           )}
                        </div>
                    </div>
                 </Link>
