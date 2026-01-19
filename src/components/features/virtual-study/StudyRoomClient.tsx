@@ -1,5 +1,6 @@
 'use client';
 
+// ... imports (保持不變)
 import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpen, GitGraph, BrainCircuit, PenTool, MessageSquare, Book, ChevronRight, Download, Loader2, Target, AlertCircle, CheckCircle } from "lucide-react";
@@ -45,30 +46,19 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
   const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [isExporting, setIsExporting] = useState(false);
   const [logicMapImage, setLogicMapImage] = useState<string | undefined>(undefined);
-
-  // 🔥 修復 1：將報表資料移入 State，避免 SSR 時存取 localStorage 報錯
   const [reportData, setReportData] = useState<any>(null);
-  
-  // 🔥 修復 2：建立學生端的資產 State，用於即時顯示作業狀態
   const [myAssets, setMyAssets] = useState<StudentAsset[]>([]);
 
   const reportRef = useRef<HTMLDivElement>(null);
-
-  // 取得任務指派 (從 TeacherStore 讀取，這部分是靜態的 Mock Data 或記憶體狀態)
   const assignment = classId ? getAssignment(classId, selectedLesson.id) : undefined;
 
-  // 🔥 關鍵 Effect：僅在客戶端執行 (解決 localStorage error) 並同步資料
   useEffect(() => {
-      // 1. 讀取學生的資產 (這是從 LocalStorage 'wenxin-assets-repository' 讀取的真實狀態)
-      // 這樣老師改完後，學生一重新整理就能看到
       const assets = GamificationEngine.getMyAssets(name);
       setMyAssets(assets);
 
-      // 2. 準備截圖用的圖片
       const snapshot = localStorage.getItem(`logic-map-img-${selectedLesson.id}`);
       setLogicMapImage(snapshot || undefined);
 
-      // 3. 準備報表資料
       const reflectionId = `reflection-${selectedLesson.id}`;
       const remoteRef = assets.find(a => a.id === reflectionId);
       let reflectionData = undefined;
@@ -93,7 +83,6 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
       const quizData = quizRecords[selectedLesson.id];
 
-      // 設定 State，觸發渲染
       setReportData({
           user: { name, title, level },
           lesson: selectedLesson,
@@ -104,9 +93,14 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
   }, [selectedLesson.id, name, title, level, quizRecords]);
 
-  // 🔥 從 assets 狀態中找出當前課程的作業狀態
   const logicAsset = myAssets.find(a => a.id === `logic-${selectedLesson.id}`);
   const annotationAsset = myAssets.find(a => a.id === `annotation-${selectedLesson.id}`);
+  
+  // 🔥 新增：搜尋最新的 quiz-short 資產
+  // 注意：簡答題的 ID 是隨機的 (lessonId-qId-timestamp)，所以我們用 type 和 title/id 模糊比對，取最新的一筆
+  const quizAsset = myAssets
+      .filter(a => a.type === 'quiz-short' && a.id.startsWith(selectedLesson.id))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
   const handleExport = async () => {
     if (!reportRef.current) return;
@@ -119,18 +113,11 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
         pixelRatio: 2,
         width: 794,
         height: 1123,
-        style: {
-           visibility: 'visible',
-           display: 'block',
-           opacity: '1',
-           transform: 'none',
-        }
+        style: { visibility: 'visible', display: 'block', opacity: '1', transform: 'none' }
       });
       if (dataUrl.length < 5000) throw new Error(`截圖失敗`);
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(dataUrl, 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
       pdf.save(`學習歷程_${selectedLesson.title}_${name}.pdf`);
     } catch (error) {
       console.error(error);
@@ -143,7 +130,6 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
   return (
     <div className="flex min-h-screen bg-slate-50 relative z-0">
       
-      {/* 隱藏報表 (只在 reportData 準備好後渲染) */}
       {reportData && (
         <div style={{ position: 'fixed', top: 0, left: '-10000px', width: '794px', height: '1123px', zIndex: 100, opacity: 1, background: 'white', pointerEvents: 'none', overflow: 'hidden' }}>
             <PortfolioReport ref={reportRef} {...reportData} />
@@ -228,7 +214,7 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                     )}
                 </div>
 
-                {/* 🔥 閱讀任務按鈕：加入狀態顯示 */}
+                {/* 閱讀按鈕 */}
                 <Link href={`/reading/${selectedLesson.id}`} className={`group block bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition relative overflow-hidden ${
                     annotationAsset?.status === 'rejected' ? 'border-red-300 bg-red-50/50' : 
                     annotationAsset?.status === 'verified' ? 'border-green-300 bg-green-50/50' : 
@@ -238,20 +224,12 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                        <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center"><BookOpen className="w-5 h-5" /></div>
                        <div className="flex-1">
                            <h3 className="font-bold text-slate-800 text-sm">沉浸式閱讀</h3>
-                           
-                           {/* 顯示狀態 */}
                            {annotationAsset?.status === 'rejected' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1">
-                                   <AlertCircle className="w-3 h-3"/> 筆記需訂正
-                               </div>
+                               <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1"><AlertCircle className="w-3 h-3"/> 筆記需訂正</div>
                            ) : annotationAsset?.status === 'verified' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1">
-                                   <CheckCircle className="w-3 h-3"/> 筆記已確認
-                               </div>
+                               <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1"><CheckCircle className="w-3 h-3"/> 筆記已確認</div>
                            ) : annotationAsset?.status === 'pending' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1">
-                                   <Loader2 className="w-3 h-3 animate-spin"/> 等待批改中
-                               </div>
+                               <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1"><Loader2 className="w-3 h-3 animate-spin"/> 等待批改中</div>
                            ) : (
                                <p className="text-[10px] text-slate-500">原文閱讀、重點標註</p>
                            )}
@@ -268,23 +246,13 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                    <div className="flex items-center gap-3 relative z-10">
                        <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center"><GitGraph className="w-5 h-5" /></div>
                        <div className="flex-1">
-                           <div className="flex justify-between items-center">
-                                <h3 className="font-bold text-slate-800 text-sm">邏輯思辨</h3>
-                                {assignment?.level === 'A' && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 rounded font-bold">必做</span>}
-                           </div>
-                           
+                           <h3 className="font-bold text-slate-800 text-sm">邏輯思辨</h3>
                            {logicAsset?.status === 'rejected' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1">
-                                   <AlertCircle className="w-3 h-3"/> 老師已退回，請訂正
-                               </div>
+                               <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1"><AlertCircle className="w-3 h-3"/> 老師已退回，請訂正</div>
                            ) : logicAsset?.status === 'verified' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1">
-                                   <CheckCircle className="w-3 h-3"/> 作業已通過
-                               </div>
+                               <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1"><CheckCircle className="w-3 h-3"/> 作業已通過</div>
                            ) : logicAsset?.status === 'pending' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1">
-                                   <Loader2 className="w-3 h-3 animate-spin"/> 等待批改中
-                               </div>
+                               <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1"><Loader2 className="w-3 h-3 animate-spin"/> 等待批改中</div>
                            ) : (
                                <p className="text-[10px] text-slate-500">繪製結構、分析論點</p>
                            )}
@@ -292,10 +260,26 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                    </div>
                 </Link>
                 
-                <Link href={`/quiz/${selectedLesson.id}`} className="group block bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition">
-                   <div className="flex items-center gap-3">
+                {/* 🔥 測驗按鈕：加入簡答題狀態顯示 */}
+                <Link href={`/quiz/${selectedLesson.id}`} className={`group block bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition relative overflow-hidden ${
+                    quizAsset?.status === 'rejected' ? 'border-red-300 bg-red-50/50' : 
+                    quizAsset?.status === 'verified' ? 'border-green-300 bg-green-50/50' : 
+                    'border-slate-200 hover:border-indigo-300'
+                }`}>
+                   <div className="flex items-center gap-3 relative z-10">
                        <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center"><BrainCircuit className="w-5 h-5" /></div>
-                       <div><h3 className="font-bold text-slate-800 text-sm">測驗挑戰</h3><p className="text-[10px] text-slate-500">驗收成果、賺取獎勵</p></div>
+                       <div className="flex-1">
+                           <h3 className="font-bold text-slate-800 text-sm">測驗挑戰</h3>
+                           {quizAsset?.status === 'rejected' ? (
+                               <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1"><AlertCircle className="w-3 h-3"/> 簡答需訂正</div>
+                           ) : quizAsset?.status === 'verified' ? (
+                               <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1"><CheckCircle className="w-3 h-3"/> 簡答已確認</div>
+                           ) : quizAsset?.status === 'pending' ? (
+                               <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1"><Loader2 className="w-3 h-3 animate-spin"/> 簡答批改中</div>
+                           ) : (
+                               <p className="text-[10px] text-slate-500">驗收成果、賺取獎勵</p>
+                           )}
+                       </div>
                    </div>
                 </Link>
             </div>
