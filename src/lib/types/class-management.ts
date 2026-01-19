@@ -17,6 +17,8 @@ export interface LessonProgress {
   hasReflection: boolean; // 是否寫了反思
   hasLogicMap: boolean; // 是否畫了邏輯圖
   logicMapStatus?: AssetStatus; // 邏輯圖審核狀態
+  // 🔥 新增：筆記數量 (修復錯誤)
+  annotationCount: number;
 }
 
 export interface ClassRoom {

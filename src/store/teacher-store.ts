@@ -38,6 +38,7 @@ interface TeacherState {
   addClass: (name: string, semester: string) => void;
   assignTask: (assignment: Assignment) => void;
   getAssignment: (classId: string, lessonId: string) => Assignment | undefined;
+  // 🔥 新增：取得待批改項目
   getPendingSubmissions: () => PendingItem[];
   gradeSubmission: (item: PendingItem, status: 'verified' | 'rejected', feedback: string) => void;
   getClassById: (id: string) => ClassRoom | undefined;
@@ -49,6 +50,7 @@ interface TeacherState {
 
 const ASSETS_STORAGE_KEY = 'wenxin-assets-repository';
 
+// 輔助函式：讀取學生真實提交的資產
 const getRealSubmissions = (): StudentAsset[] => {
   if (typeof window === 'undefined') return [];
   try {
@@ -59,14 +61,14 @@ const getRealSubmissions = (): StudentAsset[] => {
   }
 };
 
-// 🔥 加上 persist 包裹器
+// 🔥 加上 persist 包裹器，確保重整後資料還在
 export const useTeacherStore = create<TeacherState>()(
   persist(
     (set, get) => ({
       classes: MOCK_CLASSES,
       selectedClassId: MOCK_CLASSES[0].id,
       activeAssignments: [],
-      customLessons: [], // 初始為空
+      customLessons: [], 
 
       selectClass: (classId) => set({ selectedClassId: classId }),
       
@@ -93,6 +95,7 @@ export const useTeacherStore = create<TeacherState>()(
           return get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
       },
 
+      // 🔥 核心邏輯：掃描所有學生的資產，找出狀態為 'pending' 的項目
       getPendingSubmissions: () => {
           const { classes } = get();
           const pendingItems: PendingItem[] = [];
@@ -100,11 +103,13 @@ export const useTeacherStore = create<TeacherState>()(
 
           classes.forEach(cls => {
               cls.students.forEach(stu => {
+                  // 1. 從真實資產庫 (localStorage) 查找
                   const realStudentAssets = realAssets.filter(
                       a => a.authorName === stu.name && a.status === 'pending'
                   );
 
                   realStudentAssets.forEach(asset => {
+                      // 嘗試解析 lessonId
                       let extractedLessonId = 'lesson-1'; 
                       if (asset.targetText) {
                           extractedLessonId = asset.targetText;
@@ -126,8 +131,9 @@ export const useTeacherStore = create<TeacherState>()(
                       });
                   });
 
+                  // 2. 從 Mock Progress Matrix 查找 (兼容舊資料)
                   if (realStudentAssets.length === 0) {
-                      Object.entries(cls.progressMatrix[stu.id]).forEach(([lessonId, progress]) => {
+                      Object.entries(cls.progressMatrix[stu.id] || {}).forEach(([lessonId, progress]) => {
                           if (progress.logicMapStatus === 'pending') {
                               pendingItems.push({
                                   classId: cls.id,
@@ -145,11 +151,13 @@ export const useTeacherStore = create<TeacherState>()(
                   }
               });
           });
-          return pendingItems;
+          // 依時間排序，最新的在前面
+          return pendingItems.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
       },
 
       gradeSubmission: (item, status, feedback) => {
           set(state => {
+              // 更新記憶體中的班級進度 (Mock Data)
               const newClasses = state.classes.map(cls => {
                   if (cls.id !== item.classId) return cls;
                   return {
@@ -159,8 +167,8 @@ export const useTeacherStore = create<TeacherState>()(
                           [item.studentId]: {
                               ...cls.progressMatrix[item.studentId],
                               [item.lessonId]: {
-                                  ...cls.progressMatrix[item.studentId][item.lessonId],
-                                  logicMapStatus: item.type === 'logic-map' ? status : cls.progressMatrix[item.studentId][item.lessonId].logicMapStatus,
+                                  ...(cls.progressMatrix[item.studentId]?.[item.lessonId] || {}),
+                                  logicMapStatus: item.type === 'logic-map' ? status : cls.progressMatrix[item.studentId]?.[item.lessonId]?.logicMapStatus,
                               }
                           }
                       }
@@ -169,11 +177,13 @@ export const useTeacherStore = create<TeacherState>()(
               return { classes: newClasses };
           });
 
+          // 🔥 同步更新真實資產庫 (LocalStorage)
           if (typeof window !== 'undefined') {
               try {
                   const raw = localStorage.getItem(ASSETS_STORAGE_KEY);
                   if (raw) {
                       const assets: StudentAsset[] = JSON.parse(raw);
+                      // 找到對應的資產並更新狀態
                       const targetIndex = assets.findIndex(
                           a => a.authorName === item.studentName && 
                                (a.type === item.type) &&
@@ -194,7 +204,6 @@ export const useTeacherStore = create<TeacherState>()(
 
       getClassById: (id) => get().classes.find(c => c.id === id),
 
-      // 🔥 課程操作實作
       addLesson: (lesson) => set((state) => ({ 
           customLessons: [...state.customLessons, lesson] 
       })),
@@ -205,8 +214,6 @@ export const useTeacherStore = create<TeacherState>()(
     }),
     { 
         name: 'wenxin-teacher-storage', // Store Key
-        // 選擇性：只持久化 customLessons，避免 MOCK_CLASSES 佔用太多空間或導致同步問題
-        // 不過為了方便 Demo 時修改班級狀態，這裡我們全部持久化
     }
   )
 );
