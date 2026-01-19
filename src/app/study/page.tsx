@@ -1,9 +1,13 @@
+'use client';
+
 import { Sidebar } from "@/components/layout/Sidebar";
 import Link from "next/link";
 import { MessageCircle, Sparkles } from "lucide-react";
-import { ALL_LESSONS } from "@/lib/data/lessons";
+import { useLessons } from "@/hooks/use-lessons"; // 🔥 改用 Hook
 
 export default function StudyLobbyPage() {
+  const { lessons } = useLessons(); // 🔥 獲取動態列表
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
@@ -19,7 +23,7 @@ export default function StudyLobbyPage() {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {ALL_LESSONS.map((lesson) => {
+          {lessons.map((lesson) => {
             // 從 "宋 ‧ 蘇軾" 提取出 "蘇軾"
             const authorName = lesson.author.split('‧')[1]?.trim() || lesson.author;
             
@@ -29,7 +33,6 @@ export default function StudyLobbyPage() {
                   href={`/study/${lesson.id}`}
                   className="group relative bg-white overflow-hidden rounded-2xl shadow-sm border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
                 >
-                  {/* 背景裝飾 */}
                   <div className={`absolute top-0 right-0 w-32 h-32 bg-${lesson.colorTheme}-100 rounded-bl-[100px] -mr-10 -mt-10 transition-transform group-hover:scale-110 opacity-50`}></div>
                   
                   <div className="p-8 relative z-10 flex flex-col items-center text-center">

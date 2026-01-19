@@ -1,23 +1,30 @@
+'use client';
+
 import { Sidebar } from "@/components/layout/Sidebar";
-import { getLessonById } from "@/lib/data/lessons";
 import QuizRunner from "@/components/features/quiz/QuizRunner";
+import { useParams } from "next/navigation";
+import { useLessons } from "@/hooks/use-lessons";
+import { Loader2 } from "lucide-react";
 
-interface PageProps {
-  params: Promise<{ lessonId: string }>;
-}
+export default function QuizPage() {
+  const { lessonId } = useParams();
+  const { getLesson } = useLessons();
+  
+  const lesson = getLesson(lessonId as string);
 
-// 這裡不需要 'use client'，這是一個 Server Component，所以可以 async
-export default async function QuizPage({ params }: PageProps) {
-  const { lessonId } = await params;
-  const lesson = getLessonById(lessonId);
-
-  if (!lesson) return <div>找不到課程</div>;
+  if (!lesson) return (
+      <div className="min-h-screen flex items-center justify-center text-slate-400">
+          <div className="flex flex-col items-center gap-2">
+              <Loader2 className="w-6 h-6 animate-spin"/>
+              <span>載入測驗中...</span>
+          </div>
+      </div>
+  );
 
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
       <div className="ml-64 flex-1">
-        {/* 這裡我們將互動邏輯交給 QuizRunner (Client Component) */}
         <QuizRunner lesson={lesson} />
       </div>
     </div>

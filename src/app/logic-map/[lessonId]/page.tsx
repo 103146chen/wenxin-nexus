@@ -1,21 +1,23 @@
+'use client';
+
 import LogicCanvas from "@/components/features/logic-map/LogicCanvas";
 import { Sidebar } from "@/components/layout/Sidebar";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
-import { getLessonById } from "@/lib/data/lessons"; // 👈 匯入查表工具
+import { ChevronLeft, Loader2 } from "lucide-react";
+import { useParams } from "next/navigation";
+import { useLessons } from "@/hooks/use-lessons";
 
-interface PageProps {
-  params: Promise<{ lessonId: string }>;
-}
-
-export default async function LessonLogicMapPage({ params }: PageProps) {
-  const { lessonId } = await params;
+export default function LessonLogicMapPage() {
+  const { lessonId } = useParams();
+  const { getLesson } = useLessons();
   
-  const lesson = getLessonById(lessonId);
+  const lesson = getLesson(lessonId as string);
   
-  // 處理標題：如果是已定義的課程就顯示課名，否則是自訂 ID
+  // 如果找不到 lesson (可能是純粹的自訂空白 ID)，就只顯示 ID
   const title = lesson ? `${lesson.title} - 論證架構` : `自訂邏輯圖 (${lessonId})`;
 
+  // 這裡不一定要擋掉 !lesson，因為邏輯圖支援空白 ID
+  
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
@@ -30,7 +32,7 @@ export default async function LessonLogicMapPage({ params }: PageProps) {
           </div>
         </div>
         <div className="flex-1 min-h-0">
-           <LogicCanvas lessonId={lessonId} />
+           <LogicCanvas lessonId={lessonId as string} />
         </div>
       </div>
     </div>

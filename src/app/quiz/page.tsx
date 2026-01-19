@@ -3,11 +3,12 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import Link from "next/link";
 import { BrainCircuit, ArrowRight, Star, RotateCcw, CheckCircle } from "lucide-react";
-import { ALL_LESSONS } from "@/lib/data/lessons";
 import { useUserStore } from "@/store/user-store";
+import { useLessons } from "@/hooks/use-lessons"; // 🔥 改用 Hook
 
 export default function QuizMenuPage() {
   const { quizRecords } = useUserStore();
+  const { lessons } = useLessons();
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -21,7 +22,7 @@ export default function QuizMenuPage() {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ALL_LESSONS.map((lesson) => {
+          {lessons.map((lesson) => {
             const record = quizRecords[lesson.id];
             const isFinished = record?.isFinished;
             const wrongCount = record?.wrongQuestionIds?.length || 0;
@@ -50,7 +51,6 @@ export default function QuizMenuPage() {
                         {hasWrongs ? <RotateCcw className="w-6 h-6" /> : isFinished ? <CheckCircle className="w-6 h-6" /> : <BrainCircuit className="w-6 h-6" />}
                     </div>
                     
-                    {/* 最高分顯示 */}
                     {isFinished && (
                         <div className="text-right">
                             <div className="text-xs text-slate-400 font-bold uppercase">最高分</div>

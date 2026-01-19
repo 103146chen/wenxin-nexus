@@ -1,9 +1,13 @@
+'use client';
+
 import { Sidebar } from "@/components/layout/Sidebar";
 import Link from "next/link";
 import { BookOpen, ArrowRight } from "lucide-react";
-import { ALL_LESSONS } from "@/lib/data/lessons"; // 👈 匯入中央資料
+import { useLessons } from "@/hooks/use-lessons"; // 🔥 改用 Hook
 
 export default function ReadingMenuPage() {
+  const { lessons } = useLessons();
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
@@ -16,7 +20,7 @@ export default function ReadingMenuPage() {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ALL_LESSONS.map((lesson) => ( // 👈 直接使用 ALL_LESSONS
+          {lessons.map((lesson) => (
             <Link 
               key={lesson.id} 
               href={`/reading/${lesson.id}`}

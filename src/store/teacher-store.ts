@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { ClassRoom } from '@/lib/types/class-management';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 import { StudentAsset } from '@/lib/types/gamification';
+import { Lesson } from '@/lib/data/lessons';
 
 export type AssignmentLevel = 'A' | 'B' | 'C';
 
@@ -29,6 +30,7 @@ interface TeacherState {
   classes: ClassRoom[];
   selectedClassId: string | null;
   activeAssignments: Assignment[];
+  customLessons: Lesson[];
   
   selectClass: (classId: string) => void;
   addClass: (name: string, semester: string) => void;
@@ -37,6 +39,8 @@ interface TeacherState {
   getPendingSubmissions: () => PendingItem[];
   gradeSubmission: (item: PendingItem, status: 'verified' | 'rejected', feedback: string) => void;
   getClassById: (id: string) => ClassRoom | undefined;
+  addLesson: (lesson: Lesson) => void;
+  deleteLesson: (lessonId: string) => void;
 }
 
 const ASSETS_STORAGE_KEY = 'wenxin-assets-repository';
@@ -55,6 +59,7 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
   classes: MOCK_CLASSES,
   selectedClassId: MOCK_CLASSES[0].id,
   activeAssignments: [],
+  customLessons: [],
 
   selectClass: (classId) => set({ selectedClassId: classId }),
   
@@ -185,4 +190,12 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
   },
 
   getClassById: (id) => get().classes.find(c => c.id === id),
+
+  addLesson: (lesson) => set((state) => ({ 
+      customLessons: [...state.customLessons, lesson] 
+  })),
+
+  deleteLesson: (id) => set((state) => ({
+      customLessons: state.customLessons.filter(l => l.id !== id)
+  })),
 }));

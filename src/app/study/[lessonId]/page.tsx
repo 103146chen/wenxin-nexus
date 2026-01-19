@@ -1,16 +1,24 @@
-import { getLessonById } from "@/lib/data/lessons";
+'use client';
+
+import { useParams } from "next/navigation";
+import { useLessons } from "@/hooks/use-lessons";
 import StudyRoomClient from "@/components/features/virtual-study/StudyRoomClient";
+import { Loader2 } from "lucide-react";
 
-interface PageProps {
-  params: Promise<{ lessonId: string }>;
-}
+export default function LessonStudyPage() {
+  const { lessonId } = useParams();
+  const { getLesson } = useLessons();
+  
+  const lesson = getLesson(lessonId as string);
 
-export default async function LessonStudyPage({ params }: PageProps) {
-  const { lessonId } = await params;
-  const lesson = getLessonById(lessonId);
+  if (!lesson) return (
+      <div className="min-h-screen flex items-center justify-center text-slate-400">
+          <div className="flex flex-col items-center gap-2">
+              <Loader2 className="w-6 h-6 animate-spin"/>
+              <span>載入課程中...</span>
+          </div>
+      </div>
+  );
 
-  if (!lesson) return <div>找不到課程</div>;
-
-  // 修正點：屬性名稱改為 initialLesson，與 StudyRoomClient 的介面定義一致
   return <StudyRoomClient initialLesson={lesson} />;
 }

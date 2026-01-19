@@ -1,35 +1,34 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { getLessonById } from "@/lib/data/lessons";
+import { useParams } from "next/navigation"; // 🔥 使用 useParams 獲取路由參數
+import { useLessons } from "@/hooks/use-lessons"; // 🔥 使用 hook 讀取包含自訂課程的列表
 import Link from "next/link";
-import { ArrowLeft, MessageSquare, BookOpen, Trash2, User, School, X, Check, Send } from "lucide-react";
+import { ArrowLeft, MessageSquare, BookOpen, Trash2, User, School, X, Check, Send, Loader2 } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { GamificationEngine } from "@/lib/engines/GamificationEngine";
 import { Annotation } from "@/lib/types/gamification";
 
-interface PageProps {
-  params: Promise<{ textId: string }>;
-}
-
-export default function ReadingPage({ params }: PageProps) {
-  const [textId, setTextId] = useState<string>('');
+export default function ReadingPage() {
+  const { textId } = useParams(); 
+  const { getLesson } = useLessons();
   
-  useEffect(() => {
-    params.then(p => setTextId(p.textId));
-  }, [params]);
-
-  const lesson = getLessonById(textId);
+  // 根據網址參數取得課程 (支援老師新增的課程)
+  const lesson = getLesson(textId as string);
   const { annotations, addAnnotation, removeAnnotation, name } = useUserStore();
   
-  const myAnnotations = annotations[textId] || [];
+  // 取得當前課程的學生個人筆記
+  const myAnnotations = lesson && annotations[lesson.id] ? annotations[lesson.id] : [];
   
-  // 模擬老師的預設註解
-  const teacherAnnotations: Annotation[] = [
-      { id: 't1', lessonId: textId, text: '壬戌之秋', comment: '點明時間：宋神宗元豐五年（1082年）', color: 'purple', type: 'teacher', createdAt: '' },
-      { id: 't2', lessonId: textId, text: '七月既望', comment: '既望：農曆十六日', color: 'purple', type: 'teacher', createdAt: '' },
-  ];
+  // 模擬老師的預設註解 (如果是系統預設的赤壁賦才顯示 Demo 註解)
+  const teacherAnnotations: Annotation[] = [];
+  if (lesson?.id === 'lesson-1') {
+      teacherAnnotations.push(
+          { id: 't1', lessonId: 'lesson-1', text: '壬戌之秋', comment: '點明時間：宋神宗元豐五年（1082年）', color: 'purple', type: 'teacher', createdAt: '' },
+          { id: 't2', lessonId: 'lesson-1', text: '七月既望', comment: '既望：農曆十六日', color: 'purple', type: 'teacher', createdAt: '' }
+      );
+  }
 
   const allAnnotations = [...teacherAnnotations, ...myAnnotations];
 
@@ -40,15 +39,24 @@ export default function ReadingPage({ params }: PageProps) {
   const [draftComment, setDraftComment] = useState("");
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // 處理選取
+  // 處理選取文字
   const handleMouseUp = () => {
       if (isInputOpen) return;
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) { setSelection(null); return; }
+      
+      // 確保選取的是文章內容區域
+      if (contentRef.current && !contentRef.current.contains(sel.anchorNode)) {
+          return;
+      }
+
       const text = sel.toString().trim();
       if (text.length === 0) return;
+      
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
+      
+      // 計算選單顯示位置
       setSelection({ text, top: rect.top - 60 + window.scrollY, left: rect.left + (rect.width / 2) - 100 });
   };
 
@@ -59,9 +67,9 @@ export default function ReadingPage({ params }: PageProps) {
   };
 
   const saveAnnotation = () => {
-      if (!selection) return;
-      addAnnotation(textId, {
-          lessonId: textId,
+      if (!selection || !lesson) return;
+      addAnnotation(lesson.id, {
+          lessonId: lesson.id,
           text: selection.text,
           comment: draftComment,
           color: draftColor
@@ -75,45 +83,38 @@ export default function ReadingPage({ params }: PageProps) {
       window.getSelection()?.removeAllRanges();
   };
 
-  // 🔥 新增：提交作業給老師
   const handleSubmit = () => {
       if (myAnnotations.length === 0) {
           alert("請先加入一些筆記再提交喔！");
           return;
       }
+      if (!lesson) return;
       
       GamificationEngine.submitAsset({
-          id: `annotation-${textId}`,
+          id: `annotation-${lesson.id}`,
           type: 'annotation',
           title: `閱讀筆記：${lesson?.title}`,
-          contentPreview: JSON.stringify(myAnnotations), // 把筆記打包成 JSON
+          contentPreview: JSON.stringify(myAnnotations), 
           authorId: name,
           authorName: name,
-          targetText: textId
+          targetText: lesson.id
       });
 
       alert("🚀 閱讀筆記已提交！老師將會看到你的重點標註。");
   };
 
-  // 🔥 新增：內文劃線渲染邏輯
-  // 這是一個簡易實作：將課文依照註解切割，並加上背景色
+  // 內文劃線渲染邏輯
   const renderInteractiveContent = () => {
       if (!lesson) return null;
       let content = lesson.content;
       
-      // 我們需要把字串切成 "普通文字" 與 "高亮文字" 的片段
-      // 為了避免重疊問題變得很複雜，這裡採用簡單的取代策略 (First match priority)
-      // 真實專案建議使用 Lexical 或複雜的 Range 處理
-      
-      // 1. 建立一個標記陣列，紀錄每個字元的顏色
+      // 建立樣式對照表
       const charStyles = new Array(content.length).fill(null);
       
       allAnnotations.forEach(ann => {
-          // 簡單搜尋第一次出現的位置 (MVP 限制：無法處理重複字詞的精確定位)
           const start = content.indexOf(ann.text);
           if (start !== -1) {
               for (let i = start; i < start + ann.text.length; i++) {
-                  // 如果還沒被標記，就標記上去 (避免覆蓋)
                   if (!charStyles[i]) {
                       charStyles[i] = { color: ann.color, id: ann.id, type: ann.type };
                   }
@@ -121,29 +122,21 @@ export default function ReadingPage({ params }: PageProps) {
           }
       });
 
-      // 2. 根據標記陣列重新組裝 React Elements
       const elements = [];
       let currentText = "";
       let currentStyle = null;
 
       for (let i = 0; i < content.length; i++) {
           const style = charStyles[i];
-          
-          // 如果樣式變了，就把累積的文字推出去
           if (JSON.stringify(style) !== JSON.stringify(currentStyle)) {
-              if (currentText) {
-                  elements.push(renderSegment(currentText, currentStyle, i));
-              }
+              if (currentText) elements.push(renderSegment(currentText, currentStyle, i));
               currentText = content[i];
               currentStyle = style;
           } else {
               currentText += content[i];
           }
       }
-      // 推最後一段
-      if (currentText) {
-          elements.push(renderSegment(currentText, currentStyle, content.length));
-      }
+      if (currentText) elements.push(renderSegment(currentText, currentStyle, content.length));
 
       return <div className="leading-loose whitespace-pre-wrap">{elements}</div>;
   };
@@ -165,7 +158,7 @@ export default function ReadingPage({ params }: PageProps) {
             title={style.type === 'teacher' ? '教師註解' : '我的筆記'}
           >
             {text}
-            {/* 簡易 Tooltip */}
+            {/* 懸浮顯示心得 Tooltip */}
             <span className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs p-2 rounded w-48 z-10 mb-2 shadow-xl pointer-events-none">
                 {style.type === 'teacher' && <span className="block text-[10px] text-purple-300 uppercase font-bold mb-1">TEACHER</span>}
                 {allAnnotations.find(a => a.id === style.id)?.comment || '(無文字內容)'}
@@ -174,7 +167,15 @@ export default function ReadingPage({ params }: PageProps) {
       );
   };
 
-  if (!lesson) return <div>載入中...</div>;
+  // 如果找不到課程 (可能是老師刪除了或 ID 錯誤)
+  if (!lesson) return (
+      <div className="min-h-screen flex items-center justify-center text-slate-400">
+          <div className="flex flex-col items-center gap-2">
+              <Loader2 className="w-6 h-6 animate-spin"/>
+              <span>載入文章中...</span>
+          </div>
+      </div>
+  );
 
   return (
     <div className="flex min-h-screen bg-[#fdf6e3]">
@@ -182,7 +183,7 @@ export default function ReadingPage({ params }: PageProps) {
       <div className="ml-64 flex-1 p-8 relative" onMouseUp={handleMouseUp}>
         
         <div className="flex justify-between items-center mb-8">
-            <Link href="/study" className="inline-flex items-center text-slate-500 hover:text-indigo-600 transition">
+            <Link href="/reading" className="inline-flex items-center text-slate-500 hover:text-indigo-600 transition">
             <ArrowLeft className="w-4 h-4 mr-1" /> 返回書齋
             </Link>
             <div className="flex items-center gap-4">
@@ -190,7 +191,6 @@ export default function ReadingPage({ params }: PageProps) {
                     <span className="flex items-center gap-1"><div className="w-3 h-3 bg-purple-200 rounded-full"></div> 教師註解</span>
                     <span className="flex items-center gap-1"><div className="w-3 h-3 bg-yellow-200 rounded-full"></div> 我的筆記</span>
                 </div>
-                {/* 提交按鈕 */}
                 <button 
                     onClick={handleSubmit}
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition text-sm font-bold"
@@ -211,10 +211,9 @@ export default function ReadingPage({ params }: PageProps) {
                     ref={contentRef}
                     className="prose prose-xl prose-slate max-w-none font-serif text-slate-800 bg-white p-12 rounded-xl shadow-sm border border-[#efe0c6] relative min-h-[600px]"
                 >
-                    {/* 🔥 呼叫新的渲染函數 */}
                     {renderInteractiveContent()}
 
-                    {/* 互動選單 (保持不變) */}
+                    {/* 互動選單 */}
                     {selection && (
                         <div 
                             className="fixed z-50 animate-in fade-in zoom-in duration-200"
@@ -239,10 +238,6 @@ export default function ReadingPage({ params }: PageProps) {
                                 <div className="bg-white text-slate-800 p-3 rounded-xl shadow-2xl border border-indigo-100 w-64 flex flex-col gap-2">
                                     <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-1">
                                         <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                                            <div className={`w-2 h-2 rounded-full ${
-                                                draftColor === 'yellow' ? 'bg-yellow-400' : 
-                                                draftColor === 'green' ? 'bg-green-400' : 'bg-pink-400'
-                                            }`}></div>
                                             新增筆記
                                         </span>
                                         <button onClick={closeAnnotation} className="text-slate-400 hover:text-slate-600"><X className="w-3 h-3"/></button>
@@ -291,7 +286,7 @@ export default function ReadingPage({ params }: PageProps) {
                                         {ann.type === 'teacher' ? '教師註解' : '我的筆記'}
                                     </span>
                                     {ann.type === 'student' && (
-                                        <button onClick={() => removeAnnotation(textId, ann.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                                        <button onClick={() => removeAnnotation(lesson.id, ann.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     )}

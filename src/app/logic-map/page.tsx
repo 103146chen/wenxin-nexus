@@ -1,9 +1,13 @@
+'use client';
+
 import { Sidebar } from "@/components/layout/Sidebar";
 import Link from "next/link";
 import { GitGraph, ArrowRight } from "lucide-react";
-import { ALL_LESSONS } from "@/lib/data/lessons"; // 👈 一樣匯入中央資料
+import { useLessons } from "@/hooks/use-lessons"; // 🔥 改用 Hook
 
 export default function LogicMapMenuPage() {
+  const { lessons } = useLessons();
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
@@ -16,7 +20,7 @@ export default function LogicMapMenuPage() {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ALL_LESSONS.map((lesson) => (
+          {lessons.map((lesson) => (
             <Link 
               key={lesson.id} 
               href={`/logic-map/${lesson.id}`}
@@ -37,11 +41,9 @@ export default function LogicMapMenuPage() {
             </Link>
           ))}
           
-           {/* 自訂空白畫布按鈕保持不變 */}
-           <Link href={`/logic-map/custom-${Math.floor(Math.random() * 1000)}`} className="...">
-              {/* ...略... */}
-              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3 text-slate-400"><span className="text-2xl">+</span></div>
-              <span className="font-medium text-slate-400">建立空白畫布</span>
+           <Link href={`/logic-map/custom-${Math.floor(Math.random() * 1000)}`} className="group block bg-slate-50 p-6 rounded-2xl border-2 border-dashed border-slate-200 hover:border-slate-300 hover:bg-slate-100 transition-all flex flex-col items-center justify-center min-h-[240px]">
+              <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center mb-3 text-slate-400 group-hover:text-slate-500 transition"><span className="text-2xl">+</span></div>
+              <span className="font-medium text-slate-400 group-hover:text-slate-600">建立空白畫布</span>
            </Link>
         </div>
       </div>

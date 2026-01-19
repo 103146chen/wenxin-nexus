@@ -6,10 +6,11 @@ import { Users, BookOpen, TrendingUp, AlertCircle, Plus, ChevronRight, BarChart2
 import Link from "next/link";
 import { useState, useMemo, useEffect } from "react"; // 加入 useEffect
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { ALL_LESSONS } from "@/lib/data/lessons";
+import { useLessons } from "@/hooks/use-lessons";
 import DifferentiationModal from "@/components/features/teacher/DifferentiationModal";
 
 export default function TeacherDashboard() {
+  const { lessons } = useLessons();
   const { classes, selectedClassId, selectClass, activeAssignments } = useTeacherStore();
   const currentClass = classes.find(c => c.id === selectedClassId) || classes[0];
 
@@ -59,7 +60,7 @@ export default function TeacherDashboard() {
               });
           }
       });
-      const lesson = ALL_LESSONS.find(l => l.id === selectedLessonId);
+      const lesson = lessons.find(l => l.id === selectedLessonId);
       return Object.entries(counts)
           .map(([qid, count]) => {
               const question = lesson?.quizzes.find(q => q.id === qid);
@@ -99,29 +100,34 @@ export default function TeacherDashboard() {
                 <h1 className="text-3xl font-bold text-slate-900">教師指揮中心</h1>
                 <p className="text-slate-500">歡迎回來，老師。這是您今天的班級概況。</p>
             </div>
-            
-            <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
-                <span className="text-xs font-bold text-slate-400 uppercase ml-2">當前班級</span>
-                <select 
-                    value={selectedClassId || ''}
-                    onChange={(e) => selectClass(e.target.value)}
-                    className="bg-slate-100 text-slate-700 font-bold py-2 px-4 rounded-lg outline-none cursor-pointer hover:bg-slate-200 transition"
-                >
-                    {classes.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                </select>
-                <button className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition" title="新增班級">
-                    <Plus className="w-4 h-4" />
-                </button>
-            </div>
+
+            <div className="flex gap-3">
+                <Link href="/teacher/lessons/new" className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl shadow hover:bg-slate-800 transition font-bold">
+                    <Plus className="w-4 h-4" /> 建立新課程
+                </Link>
+                <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                    <span className="text-xs font-bold text-slate-400 uppercase ml-2">當前班級</span>
+                    <select 
+                        value={selectedClassId || ''}
+                        onChange={(e) => selectClass(e.target.value)}
+                        className="bg-slate-100 text-slate-700 font-bold py-2 px-4 rounded-lg outline-none cursor-pointer hover:bg-slate-200 transition"
+                    >
+                        {classes.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+                    <button className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition" title="新增班級">
+                        <Plus className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>            
         </div>
 
         {/* 課程過濾器 */}
         <div className="mb-8 flex items-center gap-4">
             <span className="font-bold text-slate-700">數據分析範圍：</span>
             <div className="flex gap-2 overflow-x-auto pb-2">
-                {ALL_LESSONS.map(lesson => (
+                {lessons.map(lesson => (
                     <button
                         key={lesson.id}
                         onClick={() => setSelectedLessonId(lesson.id)}
@@ -176,7 +182,7 @@ export default function TeacherDashboard() {
                                 <span className="bg-white/20 px-2 py-1 rounded text-xs font-bold">進行中</span>
                             </div>
                             <p className="text-indigo-100 text-sm opacity-80">
-                                針對《{ALL_LESSONS.find(l=>l.id===currentAssignment.lessonId)?.title}》的差異化任務
+                                針對《{lessons.find(l=>l.id===currentAssignment.lessonId)?.title}》的差異化任務
                             </p>
                         </>
                     ) : (
