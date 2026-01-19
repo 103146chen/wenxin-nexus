@@ -2,12 +2,13 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, GitGraph, BrainCircuit, PenTool, MessageSquare, Book, ChevronRight, Download, Loader2 } from "lucide-react";
+import { ArrowLeft, BookOpen, GitGraph, BrainCircuit, PenTool, MessageSquare, Book, ChevronRight, Download, Loader2, Target } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import ChatInterface from "@/components/features/virtual-study/ChatInterface";
 import ReflectionEditor from "@/components/features/reflection/ReflectionEditor";
 import { Lesson, getLessonsByAuthor } from "@/lib/data/lessons";
 import { useUserStore } from "@/store/user-store";
+import { useTeacherStore } from "@/store/teacher-store"; // 🔥 引入 TeacherStore
 import { GamificationEngine } from "@/lib/engines/GamificationEngine";
 import { PortfolioReport } from "@/components/features/portfolio/PortfolioReport";
 import { toPng } from 'html-to-image';
@@ -29,13 +30,17 @@ const MOOD_MAP: Record<string, string> = {
 };
 
 export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps) {
-  const { name, title, level, quizRecords } = useUserStore();
+  const { name, title, level, quizRecords, classId } = useUserStore();
+  const { getAssignment } = useTeacherStore();
   const authorLessons = getLessonsByAuthor(initialLesson.author);
   
   const [selectedLesson, setSelectedLesson] = useState<Lesson>(initialLesson);
   const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [isExporting, setIsExporting] = useState(false);
   const [logicMapImage, setLogicMapImage] = useState<string | undefined>(undefined);
+
+  // 取得目前是否有老師派發的任務
+  const assignment = classId ? getAssignment(classId, selectedLesson.id) : undefined;
 
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -50,27 +55,25 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
     try {
       // 1. 等待渲染
-      // 我們不改變 display，而是確保 DOM 已經準備好
-      await new Promise(resolve => setTimeout(resolve, 500)); 
+      await new Promise(resolve => setTimeout(resolve, 800)); 
 
-      // 2. 使用 html-to-image 截圖
+      // 2. 截圖
       const dataUrl = await toPng(reportRef.current, {
-        backgroundColor: '#ffffff', // 強制白底，避免透明
-        cacheBust: true, // 防止快取導致圖片讀不到
-        pixelRatio: 2, // 提高清晰度
-        width: 794, // 強制設定截圖寬度 (A4)
+        backgroundColor: '#ffffff',
+        cacheBust: true, 
+        pixelRatio: 2,
+        width: 794,
         height: 1123,
         style: {
-           // 截圖當下強制設定樣式，確保不受外部影響
            visibility: 'visible',
+           display: 'block',
            opacity: '1',
            transform: 'none',
         }
       });
 
-      // 再次檢查
       if (dataUrl.length < 5000) {
-          throw new Error("截圖失敗：產生的圖片資料過短 (可能是空白)");
+          throw new Error(`截圖失敗，資料長度過短 (${dataUrl.length})`);
       }
 
       // 3. 生成 PDF
@@ -83,7 +86,7 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
     } catch (error) {
       console.error('匯出失敗詳細資訊:', error);
-      alert('匯出失敗，請再試一次。');
+      alert('匯出失敗。請稍等幾秒鐘讓圖片載入完畢後再試一次。');
     } finally {
       setIsExporting(false);
     }
@@ -123,32 +126,34 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
   const reportData = getReportData();
 
+  // 定義任務難度標籤顏色
+  const levelBadgeColor: Record<string, string> = {
+      'A': 'bg-purple-100 text-purple-700 border-purple-200',
+      'B': 'bg-blue-100 text-blue-700 border-blue-200',
+      'C': 'bg-green-100 text-green-700 border-green-200'
+  };
+
   return (
-    // 注意：最外層 relative 是為了讓絕對定位生效，且 bg-slate-50 是不透明背景，能遮住報表
     <div className="flex min-h-screen bg-slate-50 relative z-0">
       
-      {/* 🔥 修正後的隱藏容器：
-          1. position: fixed; top: 0; left: 0 -> 放在視窗左上角，確保瀏覽器認為它在視口內。
-          2. z-index: -50 -> 放在最底層，被 Sidebar 和 Content 蓋住。
-          3. opacity: 0 -> 雖然蓋住了，保險起見設透明 (toPng 截圖時會無視父層 opacity，只要子層有內容)。
-          4. pointer-events: none -> 避免點擊穿透影響操作。
-      */}
+      {/* 隱藏的報表元件 (Fixed + Off-screen) */}
       <div style={{ 
           position: 'fixed', 
           top: 0, 
-          left: 0, 
-          zIndex: -50, 
-          opacity: 0, // 使用者看不到
-          pointerEvents: 'none',
-          width: '794px', // 確保有實際寬度
+          left: '-10000px', 
+          width: '794px', 
           height: '1123px',
+          zIndex: 100,      
+          opacity: 1,       
+          background: 'white',
+          pointerEvents: 'none',
           overflow: 'hidden'
       }}>
           <PortfolioReport ref={reportRef} {...reportData} />
       </div>
 
       <Sidebar />
-      <div className="ml-64 flex-1 p-8 lg:p-12 z-10 bg-slate-50"> {/* z-10 確保蓋過報表 */}
+      <div className="ml-64 flex-1 p-8 lg:p-12 z-10 bg-slate-50">
         <Link href="/study" className="inline-flex items-center text-slate-500 hover:text-indigo-600 mb-6 transition">
           <ArrowLeft className="w-4 h-4 mr-1" /> 返回書齋列表
         </Link>
@@ -221,19 +226,41 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
             </div>
 
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500" key={`tasks-${selectedLesson.id}`}>
-                <h3 className="font-bold text-slate-500 text-xs uppercase tracking-wider mb-2">《{selectedLesson.title}》修習任務</h3>
+                
+                {/* 🔥 新增：任務提示 Banner */}
+                <div className="flex justify-between items-end mb-2">
+                    <h3 className="font-bold text-slate-500 text-xs uppercase tracking-wider">
+                        《{selectedLesson.title}》修習任務
+                    </h3>
+                    {assignment && (
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded border flex items-center gap-1 ${levelBadgeColor[assignment.level]}`}>
+                            <Target className="w-3 h-3" />
+                            教師指派：{assignment.level} 級任務
+                        </span>
+                    )}
+                </div>
+
                 <Link href={`/reading/${selectedLesson.id}`} className="group block bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:border-emerald-300 hover:shadow-md transition">
                    <div className="flex items-center gap-3">
                        <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center"><BookOpen className="w-5 h-5" /></div>
                        <div><h3 className="font-bold text-slate-800 text-sm">沉浸式閱讀</h3><p className="text-[10px] text-slate-500">原文閱讀、重點標註</p></div>
                    </div>
                 </Link>
+                
                 <Link href={`/logic-map/${selectedLesson.id}`} className="group block bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:border-orange-300 hover:shadow-md transition">
                    <div className="flex items-center gap-3">
                        <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center"><GitGraph className="w-5 h-5" /></div>
-                       <div><h3 className="font-bold text-slate-800 text-sm">邏輯思辨</h3><p className="text-[10px] text-slate-500">繪製結構、分析論點</p></div>
+                       <div className="flex-1">
+                           <div className="flex justify-between items-center">
+                                <h3 className="font-bold text-slate-800 text-sm">邏輯思辨</h3>
+                                {/* 如果是 A 級任務，顯示必做 */}
+                                {assignment?.level === 'A' && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 rounded font-bold">必做</span>}
+                           </div>
+                           <p className="text-[10px] text-slate-500">繪製結構、分析論點</p>
+                       </div>
                    </div>
                 </Link>
+                
                 <Link href={`/quiz/${selectedLesson.id}`} className="group block bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition">
                    <div className="flex items-center gap-3">
                        <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center"><BrainCircuit className="w-5 h-5" /></div>
@@ -241,6 +268,7 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                    </div>
                 </Link>
             </div>
+            
             <div className="bg-slate-100 p-5 rounded-xl text-slate-500 italic font-serif leading-relaxed text-xs border border-slate-200">
                 ❝ 文章千古事，得失寸心知。透過不同篇章，你能看見 {initialLesson.author} 在不同人生階段的心境轉折。 ❞
             </div>

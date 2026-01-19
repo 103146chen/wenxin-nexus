@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 
 // 定義測驗紀錄結構
 interface QuizRecord {
@@ -11,7 +12,6 @@ interface QuizRecord {
 }
 
 interface UserState {
-  // ... (保留原有欄位)
   name: string;
   title: string;
   avatar: string;
@@ -28,10 +28,13 @@ interface UserState {
   streakDays: number;
   lastLoginDate: string;
 
-  // 🔥 新增：測驗紀錄
+  // 測驗紀錄
   quizRecords: Record<string, QuizRecord>;
 
-  // ... (保留原有 Actions)
+  // 🔥 新增：學生所屬班級 ID
+  classId: string | null;
+
+  // Actions
   addXp: (amount: number) => void;
   addCoins: (amount: number) => void;
   updateProfile: (name: string) => void;
@@ -41,10 +44,13 @@ interface UserState {
   equipItem: (itemId: string, category: 'theme' | 'avatar') => void;
   activateSkill: (skillId: string, cooldownHours: number) => boolean;
 
-  // 🔥 新增：更新測驗紀錄
+  // 更新測驗紀錄
   updateQuizRecord: (lessonId: string, score: number, wrongIds: string[], isFirstTime: boolean) => void;
-  // 🔥 新增：紀錄訂正成功
+  // 紀錄訂正成功
   correctMistake: (lessonId: string, questionId: string) => void;
+  
+  // 🔥 新增：加入班級動作
+  joinClass: (code: string) => boolean;
 }
 
 const calculateLevelFromXp = (xp: number) => Math.floor(0.1 * Math.sqrt(xp)) || 1;
@@ -53,7 +59,6 @@ const calculateXpForNextLevel = (currentLevel: number) => Math.pow((currentLevel
 export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
-      // ... (保留原有初始值)
       name: '陌生的旅人',
       title: '初入文壇',
       avatar: 'scholar_m',
@@ -69,9 +74,11 @@ export const useUserStore = create<UserState>()(
       activeFrame: 'default',
       streakDays: 1,
       lastLoginDate: new Date().toISOString().split('T')[0],
-      quizRecords: {}, // 初始化
+      quizRecords: {},
+      
+      // 🔥 預設無班級
+      classId: null,
 
-      // ... (保留原有函數)
       addXp: (amount) => {
         const { xp, level, coins, sp } = get();
         const newXp = xp + amount;
@@ -134,7 +141,6 @@ export const useUserStore = create<UserState>()(
           return false;
       },
 
-      // 🔥 實作：更新測驗紀錄
       updateQuizRecord: (lessonId, score, wrongIds, isFirstTime) => {
           set(state => {
               const prev = state.quizRecords[lessonId] || { 
@@ -147,23 +153,20 @@ export const useUserStore = create<UserState>()(
                       [lessonId]: {
                           ...prev,
                           highestScore: Math.max(prev.highestScore, score),
-                          isFinished: true, // 標記為已完成
-                          wrongQuestionIds: wrongIds, // 更新錯題庫
+                          isFinished: true,
+                          wrongQuestionIds: wrongIds,
                       }
                   }
               };
           });
       },
 
-      // 🔥 實作：訂正成功
       correctMistake: (lessonId, questionId) => {
           set(state => {
               const record = state.quizRecords[lessonId];
               if (!record) return {};
 
-              // 從錯題列表中移除
               const newWrongIds = record.wrongQuestionIds.filter(id => id !== questionId);
-              // 增加訂正次數紀錄 (可選，用來限制獎勵)
               const newCount = (record.correctionCount[questionId] || 0) + 1;
 
               return {
@@ -180,7 +183,22 @@ export const useUserStore = create<UserState>()(
                   }
               };
           });
-      }
+      },
+
+      // 🔥 實作：加入班級
+      joinClass: (code) => {
+          // 模擬後端驗證：檢查代碼是否存在於 Mock Data
+          const targetClass = MOCK_CLASSES.find(c => c.code === code);
+          
+          if (targetClass) {
+              set({ classId: targetClass.id });
+              alert(`🎉 成功加入班級：${targetClass.name}`);
+              return true;
+          } else {
+              alert('❌ 找不到此班級代碼，請重新確認。');
+              return false;
+          }
+      },
     }),
     { name: 'wenxin-user-storage' }
   )

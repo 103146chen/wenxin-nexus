@@ -2,9 +2,9 @@
 
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useTeacherStore } from "@/store/teacher-store";
-import { Users, BookOpen, TrendingUp, AlertCircle, Plus, ChevronRight, BarChart2, Target } from "lucide-react";
+import { Users, BookOpen, TrendingUp, AlertCircle, Plus, ChevronRight, BarChart2, Target, Loader2 } from "lucide-react"; // 加入 Loader2
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react"; // 加入 useEffect
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { ALL_LESSONS } from "@/lib/data/lessons";
 import DifferentiationModal from "@/components/features/teacher/DifferentiationModal";
@@ -16,30 +16,41 @@ export default function TeacherDashboard() {
   // 狀態
   const [selectedLessonId, setSelectedLessonId] = useState('lesson-1');
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-
-  // 1. 計算全班概況
-  const totalStudents = currentClass.students.length;
-  let totalCompleted = 0;
-  let totalPending = 0;
-  let lowScoreCount = 0;
   
-  Object.values(currentClass.progressMatrix).forEach(progress => {
-      const p = progress[selectedLessonId];
-      if (p?.status === 'completed') totalCompleted++;
-      if (p?.logicMapStatus === 'pending') totalPending++;
-      if (p?.quizScore && p.quizScore < 3) lowScoreCount++;
-  });
+  // 🔥 修復 Hydration Error 的關鍵：
+  // 我們先設定 mounted 為 false，等到 useEffect 執行(代表在瀏覽器端了)才設為 true
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // 1. 計算全班概況 (移到下方，確保 mounted 後才運算，避免 SSR/CSR 不一致)
+  const totalStudents = currentClass.students.length;
+  
+  // 這些運算依賴 Math.random 產生的假資料，所以必須確保只在 Client 端渲染
+  const stats = useMemo(() => {
+      let completed = 0;
+      let pending = 0;
+      let lowScore = 0;
+      
+      Object.values(currentClass.progressMatrix).forEach(progress => {
+          const p = progress[selectedLessonId];
+          if (p?.status === 'completed') completed++;
+          if (p?.logicMapStatus === 'pending') pending++;
+          if (p?.quizScore && p.quizScore < 3) lowScore++;
+      });
+      return { completed, pending, lowScore };
+  }, [currentClass, selectedLessonId]);
 
   const completionData = [
-    { name: '已完成', value: totalCompleted, color: '#10b981' },
-    { name: '進行中', value: totalStudents - totalCompleted, color: '#e2e8f0' },
+    { name: '已完成', value: stats.completed, color: '#10b981' },
+    { name: '進行中', value: totalStudents - stats.completed, color: '#e2e8f0' },
   ];
 
-  // 2. 🔥 計算錯題熱點 (Hotspot Analysis)
+  // 2. 計算錯題熱點
   const wrongStats = useMemo(() => {
       const counts: Record<string, number> = {};
-      
-      // 遍歷所有學生，統計錯題
       Object.values(currentClass.progressMatrix).forEach(progress => {
           const p = progress[selectedLessonId];
           if (p && p.quizWrongIds) {
@@ -48,24 +59,34 @@ export default function TeacherDashboard() {
               });
           }
       });
-
-      // 轉換為圖表格式，並關聯題目文字
       const lesson = ALL_LESSONS.find(l => l.id === selectedLessonId);
-      const chartData = Object.entries(counts)
+      return Object.entries(counts)
           .map(([qid, count]) => {
               const question = lesson?.quizzes.find(q => q.id === qid);
-              // 截取題目文字前 10 個字，避免太長
               const shortText = question ? (question.question.substring(0, 12) + '...') : qid;
               return { name: shortText, count, fullQuestion: question?.question };
           })
-          .sort((a, b) => b.count - a.count) // 排序：錯最多的在前面
-          .slice(0, 5); // 取前 5 名
-
-      return chartData;
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
   }, [currentClass, selectedLessonId]);
 
-  // 3. 取得當前指派的任務
   const currentAssignment = activeAssignments.find(a => a.classId === currentClass.id && a.lessonId === selectedLessonId);
+
+  // 🔥 防止 SSR 渲染不一致：
+  // 如果還沒 Mount (還在伺服器端或剛載入)，只顯示 Loading 或空殼
+  if (!isMounted) {
+      return (
+        <div className="flex min-h-screen bg-slate-50">
+            <Sidebar />
+            <div className="ml-64 flex-1 p-10 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4 text-slate-400">
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                    <p>正在讀取班級數據...</p>
+                </div>
+            </div>
+        </div>
+      );
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -96,7 +117,7 @@ export default function TeacherDashboard() {
             </div>
         </div>
 
-        {/* 課程過濾器 (控制儀表板數據來源) */}
+        {/* 課程過濾器 */}
         <div className="mb-8 flex items-center gap-4">
             <span className="font-bold text-slate-700">數據分析範圍：</span>
             <div className="flex gap-2 overflow-x-auto pb-2">
@@ -124,22 +145,26 @@ export default function TeacherDashboard() {
             </div>
             <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
                 <div className="w-12 h-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center"><BookOpen className="w-6 h-6" /></div>
-                <div><div className="text-3xl font-bold text-slate-800">{Math.round((totalCompleted/totalStudents)*100)}%</div><div className="text-xs text-slate-500 font-bold uppercase">完成率</div></div>
+                <div>
+                    {/* 這裡原本會報錯，現在因為有 isMounted 保護，只會在 Client 端渲染 */}
+                    <div className="text-3xl font-bold text-slate-800">{Math.round((stats.completed/totalStudents)*100)}%</div>
+                    <div className="text-xs text-slate-500 font-bold uppercase">完成率</div>
+                </div>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
                 <div className="w-12 h-12 bg-yellow-50 text-yellow-600 rounded-xl flex items-center justify-center"><AlertCircle className="w-6 h-6" /></div>
-                <div><div className="text-3xl font-bold text-slate-800">{totalPending}</div><div className="text-xs text-slate-500 font-bold uppercase">待批改</div></div>
+                <div><div className="text-3xl font-bold text-slate-800">{stats.pending}</div><div className="text-xs text-slate-500 font-bold uppercase">待批改</div></div>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
                 <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center"><TrendingUp className="w-6 h-6" /></div>
-                <div><div className="text-3xl font-bold text-slate-800">{lowScoreCount}</div><div className="text-xs text-slate-500 font-bold uppercase">需補救</div></div>
+                <div><div className="text-3xl font-bold text-slate-800">{stats.lowScore}</div><div className="text-xs text-slate-500 font-bold uppercase">需補救</div></div>
             </div>
         </div>
 
         {/* 圖表區 */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
             
-            {/* 1. 任務派發卡片 (Differentiation) */}
+            {/* 1. 任務派發卡片 */}
             <div className="bg-gradient-to-br from-indigo-600 to-violet-700 text-white p-8 rounded-3xl shadow-lg shadow-indigo-200 flex flex-col justify-between relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl"></div>
                 <div>
@@ -170,7 +195,7 @@ export default function TeacherDashboard() {
                 </button>
             </div>
 
-            {/* 2. 錯題熱點分析 (Hotspot Analysis) */}
+            {/* 2. 錯題熱點分析 */}
             <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col">
                 <div className="flex justify-between items-center mb-2">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -200,7 +225,7 @@ export default function TeacherDashboard() {
             </div>
         </div>
 
-        {/* 學生列表 (保持原本樣式，略作優化) */}
+        {/* 學生列表 */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800">學生名單 ({totalStudents})</h3>
