@@ -30,7 +30,8 @@ export interface ShortAnswerQuestion extends BaseQuestion {
 export interface GroupQuestion extends BaseQuestion {
   type: 'group';
   groupContent: string;
-  subQuestions: (SingleChoiceQuestion | MultipleChoiceQuestion)[];
+  // 🔥 修正：加入 ShortAnswerQuestion 支援
+  subQuestions: (SingleChoiceQuestion | MultipleChoiceQuestion | ShortAnswerQuestion)[];
 }
 
 export type QuizQuestion = SingleChoiceQuestion | MultipleChoiceQuestion | ShortAnswerQuestion | GroupQuestion;
@@ -40,13 +41,13 @@ export interface Lesson {
   title: string;
   author: string;
   description: string;
-  // 🔥 新增：課文內容
   content: string;
   colorTheme: string;
   difficultWords: string[];
   quizzes: QuizQuestion[];
 }
 
+// (以下為靜態資料，保持不變...)
 export const ALL_LESSONS: Lesson[] = [
   {
     id: 'lesson-1',
@@ -105,7 +106,7 @@ export const ALL_LESSONS: Lesson[] = [
         groupContent: '於是飲酒樂甚，扣舷而歌之。歌曰：「桂棹兮蘭槳，擊空明兮溯流光。渺渺兮予懷，望美人兮天一方。」客有吹洞簫者，倚歌而和之。',
         subQuestions: [
           {
-            id: 'q1-g-1',
+            id: 'q-g-1',
             type: 'single',
             question: '這段文字描寫的情感轉折為何？',
             options: ['由悲轉樂', '由樂轉悲', '始終悲涼', '始終歡樂'],
@@ -114,7 +115,7 @@ export const ALL_LESSONS: Lesson[] = [
             guidance: '注意「飲酒樂甚」之後接了什麼動作？客人的簫聲聽起來如何？'
           },
           {
-            id: 'q1-g-2',
+            id: 'q-g-2',
             type: 'single',
             question: '「望美人兮天一方」一句，反映了作者何種心境？',
             options: ['思念遠方的情人', '渴望歸隱山林', '忠君愛國卻遭貶謫', '感嘆時光飛逝'],
