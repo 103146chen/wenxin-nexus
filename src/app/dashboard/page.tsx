@@ -16,11 +16,13 @@ import {
   GraduationCap,
   Target,
   BarChart2,
-  Loader2
+  Loader2,
+  Settings 
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import DifferentiationModal from "@/components/features/teacher/DifferentiationModal";
+import ClassManagementModal from "@/components/features/teacher/ClassManagementModal";
 
 export default function TeacherDashboard() {
   const { classes, selectedClassId, selectClass, getPendingSubmissions, activeAssignments } = useTeacherStore();
@@ -33,6 +35,8 @@ export default function TeacherDashboard() {
   // 狀態
   const [selectedLessonId, setSelectedLessonId] = useState('lesson-1'); // 預設赤壁賦
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  // 控制班級管理 Modal
+  const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   
   // 防止 Hydration Error
   const [isMounted, setIsMounted] = useState(false);
@@ -68,7 +72,8 @@ export default function TeacherDashboard() {
                           totalQuizScore += p.quizScore;
                           quizCount++;
                       }
-                      if (p.quizScore !== undefined || p.logicMapStatus === 'verified' || p.annotationCount > 0) {
+                      // 注意：這裡使用了 annotationCount，請確保型別定義已更新
+                      if (p.quizScore !== undefined || p.logicMapStatus === 'verified' || (p.annotationCount && p.annotationCount > 0)) {
                           completedTasks++;
                       }
                       totalAssignedTasks++;
@@ -274,9 +279,48 @@ export default function TeacherDashboard() {
                 </div>
             </div>
 
-            {/* 右側：任務派發狀態 */}
-            <div className="col-span-4">
-                <div className="bg-gradient-to-br from-indigo-600 to-violet-700 text-white p-8 rounded-3xl shadow-lg shadow-indigo-200 flex flex-col justify-between relative overflow-hidden group h-full">
+            {/* 右側：班級概況與快速入口 */}
+            <div className="col-span-4 space-y-6">
+                
+                {/* 班級成員概況 (整合管理按鈕) */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex justify-between items-start mb-4">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                            <GraduationCap className="w-5 h-5 text-indigo-600" />
+                            {currentClass.name}
+                        </h3>
+                        {/* 啟用管理按鈕 */}
+                        <button 
+                            onClick={() => setIsClassModalOpen(true)}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition" 
+                            title="管理成員"
+                        >
+                            <Settings className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-slate-500">班級代碼</span>
+                            <span className="font-mono font-bold bg-slate-100 px-2 py-1 rounded">{currentClass.code}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-slate-500">學生人數</span>
+                            <span className="font-bold">{currentClass.students.length} 人</span>
+                        </div>
+                        <div className="pt-4 border-t border-slate-100">
+                            {/* 啟用按鈕 */}
+                            <button 
+                                onClick={() => setIsClassModalOpen(true)}
+                                className="w-full py-2 bg-slate-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-50 transition border border-slate-200 hover:border-indigo-200"
+                            >
+                                管理班級成員
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 派題狀態 */}
+                <div className="bg-gradient-to-br from-indigo-600 to-violet-700 text-white p-8 rounded-3xl shadow-lg shadow-indigo-200 flex flex-col justify-between relative overflow-hidden group h-[220px]">
                     <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl"></div>
                     <div>
                         <h3 className="text-indigo-200 font-bold text-xs uppercase tracking-wider mb-4">當前課程：{lessons.find(l=>l.id===selectedLessonId)?.title}</h3>
@@ -295,11 +339,7 @@ export default function TeacherDashboard() {
                             </>
                         )}
                     </div>
-                    
-                    <button 
-                        onClick={() => setIsAssignModalOpen(true)}
-                        className="mt-6 w-full py-3 bg-white text-indigo-700 hover:bg-indigo-50 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm"
-                    >
+                    <button onClick={() => setIsAssignModalOpen(true)} className="mt-4 w-full py-3 bg-white text-indigo-700 hover:bg-indigo-50 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm">
                         <Target className="w-4 h-4" /> {currentAssignment ? '調整任務' : '立即派題'}
                     </button>
                 </div>
@@ -444,10 +484,18 @@ export default function TeacherDashboard() {
             </div>
         </div>
 
+        {/* Modals */}
         <DifferentiationModal 
             classId={currentClass.id}
             isOpen={isAssignModalOpen}
             onClose={() => setIsAssignModalOpen(false)}
+        />
+        
+        {/* ClassManagementModal - 班級管理 */}
+        <ClassManagementModal 
+            classId={currentClass.id}
+            isOpen={isClassModalOpen}
+            onClose={() => setIsClassModalOpen(false)}
         />
 
       </div>

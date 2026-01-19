@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware'; // 🔥 引入 persist
-import { ClassRoom } from '@/lib/types/class-management';
+import { persist } from 'zustand/middleware';
+import { ClassRoom, LessonProgress, StudentSummary } from '@/lib/types/class-management'; // 確保引用正確
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 import { StudentAsset } from '@/lib/types/gamification';
 import { Lesson } from '@/lib/data/lessons';
@@ -30,27 +30,25 @@ interface TeacherState {
   classes: ClassRoom[];
   selectedClassId: string | null;
   activeAssignments: Assignment[];
-  
-  // 自訂課程
   customLessons: Lesson[];
 
   selectClass: (classId: string) => void;
   addClass: (name: string, semester: string) => void;
+  // 🔥 新增：班級成員管理動作
+  addStudent: (classId: string, name: string, studentCode: string) => void;
+  removeStudent: (classId: string, studentId: string) => void;
+  
   assignTask: (assignment: Assignment) => void;
   getAssignment: (classId: string, lessonId: string) => Assignment | undefined;
-  // 🔥 新增：取得待批改項目
   getPendingSubmissions: () => PendingItem[];
   gradeSubmission: (item: PendingItem, status: 'verified' | 'rejected', feedback: string) => void;
   getClassById: (id: string) => ClassRoom | undefined;
-  
-  // 課程操作
   addLesson: (lesson: Lesson) => void;
   deleteLesson: (lessonId: string) => void;
 }
 
 const ASSETS_STORAGE_KEY = 'wenxin-assets-repository';
 
-// 輔助函式：讀取學生真實提交的資產
 const getRealSubmissions = (): StudentAsset[] => {
   if (typeof window === 'undefined') return [];
   try {
@@ -61,14 +59,13 @@ const getRealSubmissions = (): StudentAsset[] => {
   }
 };
 
-// 🔥 加上 persist 包裹器，確保重整後資料還在
 export const useTeacherStore = create<TeacherState>()(
   persist(
     (set, get) => ({
       classes: MOCK_CLASSES,
       selectedClassId: MOCK_CLASSES[0].id,
       activeAssignments: [],
-      customLessons: [], 
+      customLessons: [],
 
       selectClass: (classId) => set({ selectedClassId: classId }),
       
@@ -84,6 +81,69 @@ export const useTeacherStore = create<TeacherState>()(
         set(state => ({ classes: [...state.classes, newClass] }));
       },
 
+      // 🔥 實作：新增學生
+      addStudent: (classId, name, studentCode) => set(state => {
+          const newStudentId = `student-${Date.now()}`;
+          const newStudent: StudentSummary = {
+              id: newStudentId,
+              name: name,
+              // 如果有 studentCode 可以當作頭像生成的種子，這裡簡化處理
+              avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=' + newStudentId,
+              level: 1,
+              xp: 0,
+              streak: 0
+          };
+
+          return {
+              classes: state.classes.map(cls => {
+                  if (cls.id !== classId) return cls;
+                  
+                  // 初始化該學生的進度矩陣 (重要！否則讀取儀表板會報錯)
+                  // 這裡我們預設初始化 'lesson-1' 到 'lesson-3'
+                  const initialProgress: Record<string, LessonProgress> = {};
+                  ['lesson-1', 'lesson-2', 'lesson-3'].forEach(lid => {
+                      initialProgress[lid] = {
+                          lessonId: lid,
+                          status: 'not-started',
+                          quizWrongIds: [],
+                          hasReflection: false,
+                          hasLogicMap: false,
+                          annotationCount: 0
+                      };
+                  });
+
+                  return {
+                      ...cls,
+                      students: [...cls.students, newStudent],
+                      progressMatrix: {
+                          ...cls.progressMatrix,
+                          [newStudentId]: initialProgress
+                      }
+                  };
+              })
+          };
+      }),
+
+      // 🔥 實作：移除學生
+      removeStudent: (classId, studentId) => set(state => ({
+          classes: state.classes.map(cls => {
+              if (cls.id !== classId) return cls;
+              
+              // 移除學生名單
+              const newStudents = cls.students.filter(s => s.id !== studentId);
+              
+              // 移除進度資料 (清理垃圾)
+              const newMatrix = { ...cls.progressMatrix };
+              delete newMatrix[studentId];
+
+              return {
+                  ...cls,
+                  students: newStudents,
+                  progressMatrix: newMatrix
+              };
+          })
+      })),
+
       assignTask: (newAssignment) => set(state => {
         const filtered = state.activeAssignments.filter(
             a => !(a.classId === newAssignment.classId && a.lessonId === newAssignment.lessonId)
@@ -95,7 +155,6 @@ export const useTeacherStore = create<TeacherState>()(
           return get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
       },
 
-      // 🔥 核心邏輯：掃描所有學生的資產，找出狀態為 'pending' 的項目
       getPendingSubmissions: () => {
           const { classes } = get();
           const pendingItems: PendingItem[] = [];
@@ -103,13 +162,11 @@ export const useTeacherStore = create<TeacherState>()(
 
           classes.forEach(cls => {
               cls.students.forEach(stu => {
-                  // 1. 從真實資產庫 (localStorage) 查找
                   const realStudentAssets = realAssets.filter(
                       a => a.authorName === stu.name && a.status === 'pending'
                   );
 
                   realStudentAssets.forEach(asset => {
-                      // 嘗試解析 lessonId
                       let extractedLessonId = 'lesson-1'; 
                       if (asset.targetText) {
                           extractedLessonId = asset.targetText;
@@ -131,9 +188,8 @@ export const useTeacherStore = create<TeacherState>()(
                       });
                   });
 
-                  // 2. 從 Mock Progress Matrix 查找 (兼容舊資料)
-                  if (realStudentAssets.length === 0) {
-                      Object.entries(cls.progressMatrix[stu.id] || {}).forEach(([lessonId, progress]) => {
+                  if (realStudentAssets.length === 0 && cls.progressMatrix && cls.progressMatrix[stu.id]) {
+                      Object.entries(cls.progressMatrix[stu.id]).forEach(([lessonId, progress]) => {
                           if (progress.logicMapStatus === 'pending') {
                               pendingItems.push({
                                   classId: cls.id,
@@ -151,15 +207,17 @@ export const useTeacherStore = create<TeacherState>()(
                   }
               });
           });
-          // 依時間排序，最新的在前面
           return pendingItems.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
       },
 
       gradeSubmission: (item, status, feedback) => {
           set(state => {
-              // 更新記憶體中的班級進度 (Mock Data)
               const newClasses = state.classes.map(cls => {
                   if (cls.id !== item.classId) return cls;
+                  // 安全存取 progressMatrix
+                  const studentProgress = cls.progressMatrix?.[item.studentId]?.[item.lessonId];
+                  if (!studentProgress) return cls;
+
                   return {
                       ...cls,
                       progressMatrix: {
@@ -167,8 +225,8 @@ export const useTeacherStore = create<TeacherState>()(
                           [item.studentId]: {
                               ...cls.progressMatrix[item.studentId],
                               [item.lessonId]: {
-                                  ...(cls.progressMatrix[item.studentId]?.[item.lessonId] || {}),
-                                  logicMapStatus: item.type === 'logic-map' ? status : cls.progressMatrix[item.studentId]?.[item.lessonId]?.logicMapStatus,
+                                  ...studentProgress,
+                                  logicMapStatus: item.type === 'logic-map' ? status : studentProgress.logicMapStatus,
                               }
                           }
                       }
@@ -177,13 +235,11 @@ export const useTeacherStore = create<TeacherState>()(
               return { classes: newClasses };
           });
 
-          // 🔥 同步更新真實資產庫 (LocalStorage)
           if (typeof window !== 'undefined') {
               try {
                   const raw = localStorage.getItem(ASSETS_STORAGE_KEY);
                   if (raw) {
                       const assets: StudentAsset[] = JSON.parse(raw);
-                      // 找到對應的資產並更新狀態
                       const targetIndex = assets.findIndex(
                           a => a.authorName === item.studentName && 
                                (a.type === item.type) &&
@@ -203,17 +259,9 @@ export const useTeacherStore = create<TeacherState>()(
       },
 
       getClassById: (id) => get().classes.find(c => c.id === id),
-
-      addLesson: (lesson) => set((state) => ({ 
-          customLessons: [...state.customLessons, lesson] 
-      })),
-
-      deleteLesson: (id) => set((state) => ({
-          customLessons: state.customLessons.filter(l => l.id !== id)
-      })),
+      addLesson: (lesson) => set((state) => ({ customLessons: [...state.customLessons, lesson] })),
+      deleteLesson: (id) => set((state) => ({ customLessons: state.customLessons.filter(l => l.id !== id) })),
     }),
-    { 
-        name: 'wenxin-teacher-storage', // Store Key
-    }
+    { name: 'wenxin-teacher-storage' }
   )
 );
