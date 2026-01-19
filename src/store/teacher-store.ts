@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware'; // 🔥 引入 persist
 import { ClassRoom } from '@/lib/types/class-management';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 import { StudentAsset } from '@/lib/types/gamification';
@@ -13,7 +14,6 @@ export interface PendingItem {
   studentName: string;
   studentAvatar: string;
   lessonId: string;
-  // 🔥 新增：quiz-short
   type: 'logic-map' | 'reflection' | 'annotation' | 'quiz-short';
   submittedAt: string;
   contentMock: string;
@@ -30,8 +30,10 @@ interface TeacherState {
   classes: ClassRoom[];
   selectedClassId: string | null;
   activeAssignments: Assignment[];
-  customLessons: Lesson[];
   
+  // 自訂課程
+  customLessons: Lesson[];
+
   selectClass: (classId: string) => void;
   addClass: (name: string, semester: string) => void;
   assignTask: (assignment: Assignment) => void;
@@ -39,6 +41,8 @@ interface TeacherState {
   getPendingSubmissions: () => PendingItem[];
   gradeSubmission: (item: PendingItem, status: 'verified' | 'rejected', feedback: string) => void;
   getClassById: (id: string) => ClassRoom | undefined;
+  
+  // 課程操作
   addLesson: (lesson: Lesson) => void;
   deleteLesson: (lessonId: string) => void;
 }
@@ -55,147 +59,154 @@ const getRealSubmissions = (): StudentAsset[] => {
   }
 };
 
-export const useTeacherStore = create<TeacherState>((set, get) => ({
-  classes: MOCK_CLASSES,
-  selectedClassId: MOCK_CLASSES[0].id,
-  activeAssignments: [],
-  customLessons: [],
+// 🔥 加上 persist 包裹器
+export const useTeacherStore = create<TeacherState>()(
+  persist(
+    (set, get) => ({
+      classes: MOCK_CLASSES,
+      selectedClassId: MOCK_CLASSES[0].id,
+      activeAssignments: [],
+      customLessons: [], // 初始為空
 
-  selectClass: (classId) => set({ selectedClassId: classId }),
-  
-  addClass: (name, semester) => {
-    const newClass: ClassRoom = {
-      id: `class-${Date.now()}`,
-      name,
-      code: `WEN-${Math.floor(Math.random() * 900) + 100}`,
-      semester,
-      students: [],
-      progressMatrix: {}
-    };
-    set(state => ({ classes: [...state.classes, newClass] }));
-  },
+      selectClass: (classId) => set({ selectedClassId: classId }),
+      
+      addClass: (name, semester) => {
+        const newClass: ClassRoom = {
+          id: `class-${Date.now()}`,
+          name,
+          code: `WEN-${Math.floor(Math.random() * 900) + 100}`,
+          semester,
+          students: [],
+          progressMatrix: {}
+        };
+        set(state => ({ classes: [...state.classes, newClass] }));
+      },
 
-  assignTask: (newAssignment) => set(state => {
-    const filtered = state.activeAssignments.filter(
-        a => !(a.classId === newAssignment.classId && a.lessonId === newAssignment.lessonId)
-    );
-    return { activeAssignments: [...filtered, newAssignment] };
-  }),
+      assignTask: (newAssignment) => set(state => {
+        const filtered = state.activeAssignments.filter(
+            a => !(a.classId === newAssignment.classId && a.lessonId === newAssignment.lessonId)
+        );
+        return { activeAssignments: [...filtered, newAssignment] };
+      }),
 
-  getAssignment: (classId, lessonId) => {
-      return get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
-  },
+      getAssignment: (classId, lessonId) => {
+          return get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
+      },
 
-  getPendingSubmissions: () => {
-      const { classes } = get();
-      const pendingItems: PendingItem[] = [];
-      const realAssets = getRealSubmissions();
+      getPendingSubmissions: () => {
+          const { classes } = get();
+          const pendingItems: PendingItem[] = [];
+          const realAssets = getRealSubmissions();
 
-      classes.forEach(cls => {
-          cls.students.forEach(stu => {
-              const realStudentAssets = realAssets.filter(
-                  a => a.authorName === stu.name && a.status === 'pending'
-              );
-
-              realStudentAssets.forEach(asset => {
-                  let extractedLessonId = 'lesson-1'; 
-                  if (asset.targetText) {
-                      extractedLessonId = asset.targetText;
-                  } else if (asset.id.includes('lesson-')) {
-                      const match = asset.id.match(/(lesson-\d+)/);
-                      if (match) extractedLessonId = match[1];
-                  }
-
-                  pendingItems.push({
-                      classId: cls.id,
-                      className: cls.name,
-                      studentId: stu.id,
-                      studentName: stu.name,
-                      studentAvatar: stu.avatar,
-                      lessonId: extractedLessonId,
-                      // 🔥 強制轉型，支援 quiz-short
-                      type: asset.type as any,
-                      submittedAt: asset.createdAt,
-                      contentMock: asset.contentPreview
-                  });
-              });
-
-              // Mock Data 部分
-              if (realStudentAssets.length === 0) {
-                  Object.entries(cls.progressMatrix[stu.id]).forEach(([lessonId, progress]) => {
-                      if (progress.logicMapStatus === 'pending') {
-                          pendingItems.push({
-                              classId: cls.id,
-                              className: cls.name,
-                              studentId: stu.id,
-                              studentName: stu.name,
-                              studentAvatar: stu.avatar,
-                              lessonId,
-                              type: 'logic-map',
-                              submittedAt: new Date().toISOString(),
-                              contentMock: '（此為系統生成的模擬資料）'
-                          });
-                      }
-                  });
-              }
-          });
-      });
-      return pendingItems;
-  },
-
-  gradeSubmission: (item, status, feedback) => {
-      // 1. 更新 Mock Class
-      set(state => {
-          const newClasses = state.classes.map(cls => {
-              if (cls.id !== item.classId) return cls;
-              return {
-                  ...cls,
-                  progressMatrix: {
-                      ...cls.progressMatrix,
-                      [item.studentId]: {
-                          ...cls.progressMatrix[item.studentId],
-                          [item.lessonId]: {
-                              ...cls.progressMatrix[item.studentId][item.lessonId],
-                              logicMapStatus: item.type === 'logic-map' ? status : cls.progressMatrix[item.studentId][item.lessonId].logicMapStatus,
-                          }
-                      }
-                  }
-              };
-          });
-          return { classes: newClasses };
-      });
-
-      // 2. 更新 真實資料
-      if (typeof window !== 'undefined') {
-          try {
-              const raw = localStorage.getItem(ASSETS_STORAGE_KEY);
-              if (raw) {
-                  const assets: StudentAsset[] = JSON.parse(raw);
-                  const targetIndex = assets.findIndex(
-                      a => a.authorName === item.studentName && 
-                           (a.type === item.type) &&
-                           a.status === 'pending'
+          classes.forEach(cls => {
+              cls.students.forEach(stu => {
+                  const realStudentAssets = realAssets.filter(
+                      a => a.authorName === stu.name && a.status === 'pending'
                   );
 
-                  if (targetIndex !== -1) {
-                      assets[targetIndex].status = status;
-                      assets[targetIndex].feedback = feedback;
-                      localStorage.setItem(ASSETS_STORAGE_KEY, JSON.stringify(assets));
+                  realStudentAssets.forEach(asset => {
+                      let extractedLessonId = 'lesson-1'; 
+                      if (asset.targetText) {
+                          extractedLessonId = asset.targetText;
+                      } else if (asset.id.includes('lesson-')) {
+                          const match = asset.id.match(/(lesson-\d+)/);
+                          if (match) extractedLessonId = match[1];
+                      }
+
+                      pendingItems.push({
+                          classId: cls.id,
+                          className: cls.name,
+                          studentId: stu.id,
+                          studentName: stu.name,
+                          studentAvatar: stu.avatar,
+                          lessonId: extractedLessonId,
+                          type: asset.type as any,
+                          submittedAt: asset.createdAt,
+                          contentMock: asset.contentPreview
+                      });
+                  });
+
+                  if (realStudentAssets.length === 0) {
+                      Object.entries(cls.progressMatrix[stu.id]).forEach(([lessonId, progress]) => {
+                          if (progress.logicMapStatus === 'pending') {
+                              pendingItems.push({
+                                  classId: cls.id,
+                                  className: cls.name,
+                                  studentId: stu.id,
+                                  studentName: stu.name,
+                                  studentAvatar: stu.avatar,
+                                  lessonId,
+                                  type: 'logic-map',
+                                  submittedAt: new Date().toISOString(),
+                                  contentMock: '（此為系統生成的模擬資料）'
+                              });
+                          }
+                      });
                   }
+              });
+          });
+          return pendingItems;
+      },
+
+      gradeSubmission: (item, status, feedback) => {
+          set(state => {
+              const newClasses = state.classes.map(cls => {
+                  if (cls.id !== item.classId) return cls;
+                  return {
+                      ...cls,
+                      progressMatrix: {
+                          ...cls.progressMatrix,
+                          [item.studentId]: {
+                              ...cls.progressMatrix[item.studentId],
+                              [item.lessonId]: {
+                                  ...cls.progressMatrix[item.studentId][item.lessonId],
+                                  logicMapStatus: item.type === 'logic-map' ? status : cls.progressMatrix[item.studentId][item.lessonId].logicMapStatus,
+                              }
+                          }
+                      }
+                  };
+              });
+              return { classes: newClasses };
+          });
+
+          if (typeof window !== 'undefined') {
+              try {
+                  const raw = localStorage.getItem(ASSETS_STORAGE_KEY);
+                  if (raw) {
+                      const assets: StudentAsset[] = JSON.parse(raw);
+                      const targetIndex = assets.findIndex(
+                          a => a.authorName === item.studentName && 
+                               (a.type === item.type) &&
+                               a.status === 'pending'
+                      );
+
+                      if (targetIndex !== -1) {
+                          assets[targetIndex].status = status;
+                          assets[targetIndex].feedback = feedback;
+                          localStorage.setItem(ASSETS_STORAGE_KEY, JSON.stringify(assets));
+                      }
+                  }
+              } catch (e) {
+                  console.error('更新真實資料失敗', e);
               }
-          } catch (e) {
-              console.error('更新真實資料失敗', e);
           }
-      }
-  },
+      },
 
-  getClassById: (id) => get().classes.find(c => c.id === id),
+      getClassById: (id) => get().classes.find(c => c.id === id),
 
-  addLesson: (lesson) => set((state) => ({ 
-      customLessons: [...state.customLessons, lesson] 
-  })),
+      // 🔥 課程操作實作
+      addLesson: (lesson) => set((state) => ({ 
+          customLessons: [...state.customLessons, lesson] 
+      })),
 
-  deleteLesson: (id) => set((state) => ({
-      customLessons: state.customLessons.filter(l => l.id !== id)
-  })),
-}));
+      deleteLesson: (id) => set((state) => ({
+          customLessons: state.customLessons.filter(l => l.id !== id)
+      })),
+    }),
+    { 
+        name: 'wenxin-teacher-storage', // Store Key
+        // 選擇性：只持久化 customLessons，避免 MOCK_CLASSES 佔用太多空間或導致同步問題
+        // 不過為了方便 Demo 時修改班級狀態，這裡我們全部持久化
+    }
+  )
+);

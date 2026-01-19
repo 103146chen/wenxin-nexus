@@ -1,13 +1,12 @@
 'use client';
 
-// ... imports (保持不變)
 import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpen, GitGraph, BrainCircuit, PenTool, MessageSquare, Book, ChevronRight, Download, Loader2, Target, AlertCircle, CheckCircle } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import ChatInterface from "@/components/features/virtual-study/ChatInterface";
 import ReflectionEditor from "@/components/features/reflection/ReflectionEditor";
-import { Lesson, getLessonsByAuthor } from "@/lib/data/lessons";
+import { Lesson } from "@/lib/data/lessons"; // 這裡只保留型別定義
 import { useUserStore } from "@/store/user-store";
 import { useTeacherStore } from "@/store/teacher-store"; 
 import { GamificationEngine } from "@/lib/engines/GamificationEngine";
@@ -15,6 +14,7 @@ import { PortfolioReport } from "@/components/features/portfolio/PortfolioReport
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { StudentAsset } from "@/lib/types/gamification";
+import { useLessons } from "@/hooks/use-lessons"; // 🔥 引入我們的新 Hook
 
 interface StudyRoomClientProps {
   initialLesson: Lesson;
@@ -40,9 +40,24 @@ const levelBadgeColor: Record<string, string> = {
 export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps) {
   const { name, title, level, quizRecords, classId } = useUserStore();
   const { getAssignment } = useTeacherStore();
-  const authorLessons = getLessonsByAuthor(initialLesson.author);
   
+  // 🔥 改用 Hook 來獲取全站所有課程 (包含老師新增的)
+  const { lessons } = useLessons();
+  
+  // 🔥 智慧篩選：找出同作者的所有課程 (支援模糊比對)
+  // 這樣 "宋 ‧ 蘇軾" 和 "蘇軾" 的作品都會出現在右側列表中
+  const authorLessons = useMemo(() => {
+      const normalize = (name: string) => {
+          if (!name) return '';
+          return name.includes('‧') ? name.split('‧')[1].trim() : name.trim();
+      };
+      const currentAuthor = normalize(initialLesson.author);
+      return lessons.filter(l => normalize(l.author) === currentAuthor);
+  }, [lessons, initialLesson.author]);
+  
+  // 當前選中的課程 (預設為進入的那一篇)
   const [selectedLesson, setSelectedLesson] = useState<Lesson>(initialLesson);
+  
   const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [isExporting, setIsExporting] = useState(false);
   const [logicMapImage, setLogicMapImage] = useState<string | undefined>(undefined);
@@ -50,8 +65,11 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
   const [myAssets, setMyAssets] = useState<StudentAsset[]>([]);
 
   const reportRef = useRef<HTMLDivElement>(null);
+  
+  // 根據「當前選中的課程」取得任務指派
   const assignment = classId ? getAssignment(classId, selectedLesson.id) : undefined;
 
+  // 🔥 當 selectedLesson 改變時，重新讀取該課程的資產狀態 (讓按鈕狀態更新)
   useEffect(() => {
       const assets = GamificationEngine.getMyAssets(name);
       setMyAssets(assets);
@@ -93,11 +111,9 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
   }, [selectedLesson.id, name, title, level, quizRecords]);
 
+  // 計算當前課程的任務狀態 (用於顯示按鈕上的 Badge)
   const logicAsset = myAssets.find(a => a.id === `logic-${selectedLesson.id}`);
   const annotationAsset = myAssets.find(a => a.id === `annotation-${selectedLesson.id}`);
-  
-  // 🔥 新增：搜尋最新的 quiz-short 資產
-  // 注意：簡答題的 ID 是隨機的 (lessonId-qId-timestamp)，所以我們用 type 和 title/id 模糊比對，取最新的一筆
   const quizAsset = myAssets
       .filter(a => a.type === 'quiz-short' && a.id.startsWith(selectedLesson.id))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
@@ -157,6 +173,7 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-8">
             <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[650px] flex flex-col relative">
+                {/* 分頁切換 */}
                 <div className="flex border-b border-slate-100 bg-slate-50/50">
                     <button onClick={() => setActiveTab('chat')} className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'chat' ? 'bg-white text-indigo-600 border-b-2 border-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
                         <MessageSquare className="w-4 h-4" /> 導師對話
@@ -167,16 +184,19 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                 </div>
 
                 <div className="flex-1 relative bg-slate-50/30">
+                    {/* Chat Tab */}
                     <div className={`absolute inset-0 flex flex-col ${activeTab === 'chat' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}>
                         <div className="px-6 py-3 bg-indigo-50/50 border-b border-indigo-100 flex items-center justify-between text-indigo-900 text-xs font-bold">
                             <span>與 {initialLesson.author} 連線中...</span>
                             <span className="bg-white px-2 py-0.5 rounded border border-indigo-100">當前討論：{selectedLesson.title}</span>
                         </div>
                         <div className="flex-1 overflow-hidden">
+                            {/* Key 加入 selectedLesson.id 以確保切換課程時對話框重置 */}
                             <ChatInterface key={selectedLesson.id} tutorName={initialLesson.author} initialMessage={`吾乃${initialLesson.author}。關於《${selectedLesson.title}》，閣下有何心得或疑問，不妨直言。`} />
                         </div>
                     </div>
 
+                    {/* Reflection Tab */}
                     <div className={`absolute inset-0 p-6 overflow-y-auto ${activeTab === 'reflection' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}>
                         <div className="max-w-2xl mx-auto">
                             <div className="mb-6 text-center">
@@ -191,18 +211,32 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
           </div>
 
           <div className="lg:col-span-4 space-y-8">
+            {/* 右側：收錄著作列表 */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-bold text-slate-500 text-xs uppercase tracking-wider mb-4 flex items-center gap-2"><Book className="w-4 h-4" /> 收錄著作</h3>
-                <div className="space-y-2">
+                
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                     {authorLessons.map(lesson => (
-                        <button key={lesson.id} onClick={() => setSelectedLesson(lesson)} className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center justify-between ${selectedLesson.id === lesson.id ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>
-                            <span className="font-bold">{lesson.title}</span>
-                            {selectedLesson.id === lesson.id && <ChevronRight className="w-4 h-4" />}
+                        <button 
+                            key={lesson.id} 
+                            onClick={() => setSelectedLesson(lesson)} 
+                            className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center justify-between ${
+                                selectedLesson.id === lesson.id 
+                                ? 'bg-slate-900 text-white shadow-md' 
+                                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                            }`}
+                        >
+                            <span className="font-bold truncate">{lesson.title}</span>
+                            {selectedLesson.id === lesson.id && <ChevronRight className="w-4 h-4 flex-shrink-0" />}
                         </button>
                     ))}
+                    {authorLessons.length === 0 && (
+                        <p className="text-sm text-slate-400 p-2">暫無其他著作。</p>
+                    )}
                 </div>
             </div>
 
+            {/* 下方：修習任務 (會隨 selectedLesson 連動) */}
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500" key={`tasks-${selectedLesson.id}`}>
                 
                 <div className="flex justify-between items-end mb-2">
@@ -260,7 +294,7 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                    </div>
                 </Link>
                 
-                {/* 🔥 測驗按鈕：加入簡答題狀態顯示 */}
+                {/* 測驗按鈕 */}
                 <Link href={`/quiz/${selectedLesson.id}`} className={`group block bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition relative overflow-hidden ${
                     quizAsset?.status === 'rejected' ? 'border-red-300 bg-red-50/50' : 
                     quizAsset?.status === 'verified' ? 'border-green-300 bg-green-50/50' : 
