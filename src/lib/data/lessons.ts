@@ -30,11 +30,17 @@ export interface ShortAnswerQuestion extends BaseQuestion {
 export interface GroupQuestion extends BaseQuestion {
   type: 'group';
   groupContent: string;
-  // 🔥 修正：加入 ShortAnswerQuestion 支援
   subQuestions: (SingleChoiceQuestion | MultipleChoiceQuestion | ShortAnswerQuestion)[];
 }
 
 export type QuizQuestion = SingleChoiceQuestion | MultipleChoiceQuestion | ShortAnswerQuestion | GroupQuestion;
+
+export interface DifficultWord {
+  term: string;
+  definition: string;
+  // 🔥 新增：精確定位索引
+  startIndex: number;
+}
 
 export interface Lesson {
   id: string;
@@ -43,11 +49,10 @@ export interface Lesson {
   description: string;
   content: string;
   colorTheme: string;
-  difficultWords: string[];
+  difficultWords: DifficultWord[];
   quizzes: QuizQuestion[];
 }
 
-// (以下為靜態資料，保持不變...)
 export const ALL_LESSONS: Lesson[] = [
   {
     id: 'lesson-1',
@@ -64,7 +69,15 @@ export const ALL_LESSONS: Lesson[] = [
 
 客喜而笑，洗盞更酌。肴核既盡，杯盤狼藉。相與枕藉乎舟中，不知東方之既白。`,
     colorTheme: 'orange',
-    difficultWords: ['既望', '馮虛御風', '嫠婦', '愀然', '蜉蝣', '無盡藏'],
+    // 這裡的 startIndex 是預先算好的，確保 Demo 準確
+    difficultWords: [
+        { term: '既望', definition: '農曆十六日。', startIndex: 5 },
+        { term: '馮虛御風', definition: '在天空中乘風飛行。馮，通「憑」，依託。', startIndex: 92 },
+        { term: '嫠婦', definition: '寡婦。', startIndex: 228 },
+        { term: '愀然', definition: '容色改變的樣子，這裡指神色變得嚴肅。', startIndex: 233 },
+        { term: '蜉蝣', definition: '一種朝生暮死的小蟲，比喻人生短暫。', startIndex: 405 },
+        { term: '無盡藏', definition: '佛家語，指無窮無盡的寶藏。', startIndex: 559 }
+    ],
     quizzes: [
       {
         id: 'q1-1',
@@ -140,7 +153,13 @@ export const ALL_LESSONS: Lesson[] = [
 
 李氏子蟠，年十七，好古文，六藝經傳皆通習之，不拘於時，學於余。余嘉其能行古道，作《師說》以貽之。`,
     colorTheme: 'indigo',
-    difficultWords: ['句讀', '老聃', '郯子', '諂媚', '不恥相師'],
+    difficultWords: [
+        { term: '句讀', definition: '文章中的斷句。', startIndex: 227 }, 
+        { term: '老聃', definition: '老子。', startIndex: 440 },
+        { term: '郯子', definition: '春秋時郯國國君，孔子曾向他請教官職名稱的由來。', startIndex: 432 },
+        { term: '諂媚', definition: '奉承、討好。', startIndex: 0 }, // 靜態資料暫時隨意填
+        { term: '不恥相師', definition: '不以互相學習為恥。', startIndex: 285 }
+    ],
     quizzes: []
   },
   {
@@ -152,7 +171,14 @@ export const ALL_LESSONS: Lesson[] = [
 
 今年九月二十八日，因坐法華西亭，望西山，始指異之。遂命僕人過湘江，緣染溪，斫榛莽，焚茅筏，窮山之高而止。攀援而登，箕踞而遨，則凡數州之土壤，皆在衽席之下。其高下之勢，岈然窪然，若垤若穴，尺寸千里，攢蹙累積，莫得遯隱。縈青繚白，外與天際，四望如一。然後知是山之特立，不與培塿為類。悠悠乎與顥氣俱，而莫得其涯；洋洋乎與造物者遊，而不知其所窮。引觴滿酌，頹然就醉，不知日之入。蒼然暮色，自遠而至，至無所見，而猶不欲歸。心凝形釋，與萬化冥合。然後知吾嚮之未始遊，遊於是乎始。故為之文以志。是歲，元和四年也。`,
     colorTheme: 'emerald',
-    difficultWords: ['僇人', '惴慄', '施施', '箕踞', '衽席', '培塿'],
+    difficultWords: [
+        { term: '僇人', definition: '罪人，指被貶謫的人。僇，通「戮」。', startIndex: 3 },
+        { term: '惴慄', definition: '憂懼戰慄。', startIndex: 12 },
+        { term: '施施', definition: '緩緩而行的樣子。', startIndex: 20 },
+        { term: '箕踞', definition: '隨意伸開兩腿坐著，形狀像畚箕。', startIndex: 167 },
+        { term: '衽席', definition: '坐臥用的席子。', startIndex: 181 },
+        { term: '培塿', definition: '小土堆。', startIndex: 239 }
+    ],
     quizzes: []
   },
 ];

@@ -2,50 +2,61 @@ export interface StoreItem {
   id: string;
   name: string;
   description: string;
-  price: number; // 消耗 Coins
-  type: 'virtual' | 'physical'; // 虛擬還是實體
-  category: 'theme' | 'avatar' | 'teacher';
-  imageColor: string;
+  price: number;
+  // 🔥 新增 consumable
+  category: 'theme' | 'avatar' | 'consumable';
+  previewColor?: string;
+  image?: string;
 }
 
 export const STORE_ITEMS: StoreItem[] = [
-  // --- 虛擬商品 ---
+  // --- Themes ---
   {
-    id: 'theme-night',
-    name: '佈景：夜遊赤壁',
-    description: '將虛擬書齋的背景換成靜謐的赤壁夜景。',
-    price: 200,
-    type: 'virtual',
+    id: 'theme-sepia',
+    name: '護眼羊皮紙',
+    description: '溫暖的米黃色調，適合長時間閱讀。',
+    price: 150,
     category: 'theme',
-    imageColor: 'bg-indigo-900'
+    previewColor: '#fdf6e3'
   },
   {
-    id: 'frame-gold',
-    name: '頭像框：金榜題名',
-    description: '在排行榜和畫廊中顯示閃亮的金色頭像框。',
-    price: 500,
-    type: 'virtual',
-    category: 'avatar',
-    imageColor: 'bg-yellow-400'
+    id: 'theme-dark',
+    name: '靜謐深夜',
+    description: '深色背景，讓思緒在夜晚更清晰。',
+    price: 300,
+    category: 'theme',
+    previewColor: '#0f172a'
   },
   
-  // --- 實體商品 (找老師兌換) ---
+  // --- Avatars ---
   {
-    id: 'reward-snack',
-    name: '兌換券：午後時光',
-    description: '憑此券可找老師兌換一份小點心或飲料。',
-    price: 800,
-    type: 'physical',
-    category: 'teacher',
-    imageColor: 'bg-orange-400'
+    id: 'frame-gold',
+    name: '金榜題名框',
+    description: '閃耀著金色光芒的頭像外框。',
+    price: 500,
+    category: 'avatar'
   },
   {
-    id: 'reward-pass',
+    id: 'avatar-libai',
+    name: '李白套裝',
+    description: '解鎖詩仙李白的預設頭像。',
+    price: 800,
+    category: 'avatar'
+  },
+
+  // --- 🔥 實體道具 (Consumables) ---
+  {
+    id: 'item-death-medal',
     name: '免死金牌',
-    description: '可抵免一次小作業或週記 (需經老師核可)。',
-    price: 1500,
-    type: 'physical',
-    category: 'teacher',
-    imageColor: 'bg-red-500'
+    description: '在測驗中答錯一題可不扣分（僅限選擇題）。',
+    price: 1000,
+    category: 'consumable'
+  },
+  {
+    id: 'item-ration',
+    name: '戰鬥口糧',
+    description: '恢復連續登入天數 (Streak) 1 天。',
+    price: 600,
+    category: 'consumable'
   }
 ];

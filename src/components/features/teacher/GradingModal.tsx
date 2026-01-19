@@ -1,9 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Check, XCircle, FileText, GitGraph, BrainCircuit } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { X, Check, XCircle, FileText, BrainCircuit, Maximize } from 'lucide-react';
 import { PendingItem, useTeacherStore } from '@/store/teacher-store';
 import { ALL_LESSONS } from '@/lib/data/lessons';
+import { useLessons } from '@/hooks/use-lessons'; // 使用 Hook 讀取所有課程
+
+// 🔥 引入 React Flow 相關元件
+import ReactFlow, { Background, Controls, MiniMap, useNodesState, useEdgesState } from 'reactflow';
+import 'reactflow/dist/style.css';
 
 interface GradingModalProps {
   item: PendingItem | null;
@@ -14,10 +19,11 @@ interface GradingModalProps {
 export default function GradingModal({ item, isOpen, onClose }: GradingModalProps) {
   const { gradeSubmission } = useTeacherStore();
   const [feedback, setFeedback] = useState("");
+  const { getLesson } = useLessons(); // 改用 Hook 獲取課程 (支援自訂課程)
   
   if (!isOpen || !item) return null;
 
-  const lesson = ALL_LESSONS.find(l => l.id === item.lessonId);
+  const lesson = getLesson(item.lessonId);
 
   const handleGrade = (status: 'verified' | 'rejected') => {
       gradeSubmission(item, status, feedback);
@@ -28,12 +34,13 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
 
   const quickComments = [
       "觀點切中要害！",
-      "解釋得非常清楚。",
+      "結構清晰，邏輯嚴謹。",
       "請補充更多細節。",
-      "請參考課文第三段重新思考。"
+      "請參考課文第三段重新思考。",
+      "論證缺乏佐證資料。"
   ];
 
-  // 渲染帶標註的課文
+  // 渲染帶標註的課文 (Annotation)
   const renderAnnotatedText = () => {
       if (!lesson || !item.contentMock) return <p>無法載入內容</p>;
       
@@ -98,7 +105,42 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
       );
   };
 
-  // 🔥 標題顯示邏輯
+  // 🔥 新增：渲染真實邏輯圖
+  const RenderLogicMap = () => {
+      // 解析資料
+      const flowData = useMemo(() => {
+          try {
+              return JSON.parse(item.contentMock);
+          } catch(e) { return null; }
+      }, []);
+
+      if (!flowData || !flowData.nodes) {
+          return <div className="text-red-500 flex items-center justify-center h-full">無法讀取邏輯圖資料</div>;
+      }
+
+      return (
+          <div className="w-full h-[500px] border border-slate-200 rounded-xl overflow-hidden bg-slate-50 relative">
+              <ReactFlow
+                  defaultNodes={flowData.nodes}
+                  defaultEdges={flowData.edges}
+                  defaultViewport={flowData.viewport}
+                  fitView
+                  attributionPosition="bottom-right"
+                  nodesDraggable={false} // 鎖定唯讀
+                  nodesConnectable={false}
+                  elementsSelectable={true}
+              >
+                  <Background color="#94a3b8" gap={20} size={1} />
+                  <Controls showInteractive={false} />
+                  <MiniMap />
+              </ReactFlow>
+              <div className="absolute top-2 right-2 bg-white/80 backdrop-blur px-2 py-1 rounded text-xs font-bold text-slate-500 border border-slate-200 pointer-events-none">
+                  唯讀預覽模式
+              </div>
+          </div>
+      );
+  };
+
   const getTypeTitle = () => {
       switch(item.type) {
           case 'logic-map': return '邏輯思辨結構圖';
@@ -127,27 +169,16 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
                 {item.type === 'annotation' ? (
                     <div>{renderAnnotatedText()}</div>
                 ) : item.type === 'logic-map' ? (
-                    <div className="flex flex-col items-center justify-center py-12 gap-6 opacity-70">
-                        {/* Mock SVG */}
-                        <div className="flex flex-col items-center gap-8 w-full">
-                            <div className="p-4 bg-orange-100 border-2 border-orange-400 rounded-lg text-orange-800 font-bold">中心論點</div>
-                            <div className="w-0.5 h-8 bg-slate-300"></div>
-                            <div className="flex gap-8 w-full justify-center">
-                                <div className="p-3 bg-white border border-slate-300 rounded shadow-sm w-1/3 text-center text-sm">論點 A</div>
-                                <div className="p-3 bg-white border border-slate-300 rounded shadow-sm w-1/3 text-center text-sm">論點 B</div>
-                            </div>
-                        </div>
-                        <p className="text-slate-400 italic text-sm mt-8">* Canvas 截圖預覽 *</p>
-                    </div>
+                    // 🔥 使用真實渲染元件
+                    <RenderLogicMap />
                 ) : item.type === 'quiz-short' ? (
-                    // 🔥 新增：簡答題顯示
                     <div className="space-y-6">
                         <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100">
                             <h4 className="text-sm font-bold text-indigo-800 mb-2 uppercase tracking-wider flex items-center gap-2">
                                 <BrainCircuit className="w-4 h-4"/> 題目
                             </h4>
                             <p className="text-lg font-serif font-bold text-slate-800">
-                                {item.contentMock.length < 20 ? "（簡答題內容）" : "請簡述《赤壁賦》中「風」與「月」在全文結構與情景營造上的作用。"}
+                                {item.contentMock.length < 20 ? "（簡答題內容）" : "請參考詳解進行評分。"}
                             </p>
                         </div>
                         <div>
@@ -165,7 +196,7 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
             </div>
         </div>
 
-        {/* 右側評分欄 */}
+        {/* 右側評分欄 (保持不變) */}
         <div className="w-96 bg-white flex flex-col shrink-0">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="font-bold text-slate-800">作業批改</h3>
