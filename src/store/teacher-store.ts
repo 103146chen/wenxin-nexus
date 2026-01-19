@@ -13,10 +13,9 @@ export interface PendingItem {
   studentName: string;
   studentAvatar: string;
   lessonId: string;
-  // 🔥 更新：加入 annotation 類型
   type: 'logic-map' | 'reflection' | 'annotation';
   submittedAt: string;
-  contentMock: string;
+  contentMock: string; // 這裡是 JSON string
 }
 
 interface Assignment {
@@ -40,10 +39,13 @@ interface TeacherState {
   getClassById: (id: string) => ClassRoom | undefined;
 }
 
+// 🔥 修復：Key 必須與 GamificationEngine 一致
+const ASSETS_STORAGE_KEY = 'wenxin-assets-repository';
+
 const getRealSubmissions = (): StudentAsset[] => {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem('wenxin-assets');
+    const raw = localStorage.getItem(ASSETS_STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     return [];
@@ -80,6 +82,7 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
       return get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
   },
 
+  // 🔥 整合真實提交與 Mock Data
   getPendingSubmissions: () => {
       const { classes } = get();
       const pendingItems: PendingItem[] = [];
@@ -87,35 +90,37 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
 
       classes.forEach(cls => {
           cls.students.forEach(stu => {
+              // 1. 優先檢查真實資料庫
               const realStudentAssets = realAssets.filter(
                   a => a.authorName === stu.name && a.status === 'pending'
               );
 
-              realStudentAssets.forEach(asset => {
-                  let extractedLessonId = 'lesson-1';
-                  // 嘗試從 ID 中解析 lessonId (格式通常是 type-lessonId)
-                  if (asset.id.includes('lesson-')) {
-                      const match = asset.id.match(/(lesson-\d+)/);
-                      if (match) extractedLessonId = match[1];
-                  }
+              if (realStudentAssets.length > 0) {
+                  realStudentAssets.forEach(asset => {
+                      // 解析 lessonId
+                      let extractedLessonId = 'lesson-1'; 
+                      // 嘗試解析 id (例如: annotation-lesson-1)
+                      if (asset.targetText) {
+                          extractedLessonId = asset.targetText;
+                      } else if (asset.id.includes('lesson-')) {
+                          const match = asset.id.match(/(lesson-\d+)/);
+                          if (match) extractedLessonId = match[1];
+                      }
 
-                  pendingItems.push({
-                      classId: cls.id,
-                      className: cls.name,
-                      studentId: stu.id,
-                      studentName: stu.name,
-                      studentAvatar: stu.avatar,
-                      lessonId: extractedLessonId,
-                      // 🔥 更新：類型判斷
-                      type: asset.type === 'logic-map' ? 'logic-map' : 
-                            asset.type === 'annotation' ? 'annotation' : 'reflection',
-                      submittedAt: asset.createdAt,
-                      contentMock: asset.contentPreview
+                      pendingItems.push({
+                          classId: cls.id,
+                          className: cls.name,
+                          studentId: stu.id,
+                          studentName: stu.name,
+                          studentAvatar: stu.avatar,
+                          lessonId: extractedLessonId,
+                          type: asset.type as any,
+                          submittedAt: asset.createdAt,
+                          contentMock: asset.contentPreview
+                      });
                   });
-              });
-
-              // Mock Data 部分 (維持不變)
-              if (realStudentAssets.length === 0) {
+              } else {
+                  // 2. 如果沒有真實資料，才使用 Mock Data (避免 Demo 時列表空白)
                   Object.entries(cls.progressMatrix[stu.id]).forEach(([lessonId, progress]) => {
                       if (progress.logicMapStatus === 'pending') {
                           pendingItems.push({
@@ -127,7 +132,7 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
                               lessonId,
                               type: 'logic-map',
                               submittedAt: new Date().toISOString(),
-                              contentMock: '（此為系統生成的模擬資料，非真實提交）'
+                              contentMock: '（此為系統生成的模擬資料）'
                           });
                       }
                   });
@@ -138,7 +143,7 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
   },
 
   gradeSubmission: (item, status, feedback) => {
-      // 1. 更新 Mock Store
+      // 1. 更新 TeacherStore 本地狀態
       set(state => {
           const newClasses = state.classes.map(cls => {
               if (cls.id !== item.classId) return cls;
@@ -159,12 +164,13 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
           return { classes: newClasses };
       });
 
-      // 2. 更新 真實資料
+      // 2. 🔥 更新 真實資料庫 (LocalStorage)
       if (typeof window !== 'undefined') {
           try {
-              const raw = localStorage.getItem('wenxin-assets');
+              const raw = localStorage.getItem(ASSETS_STORAGE_KEY);
               if (raw) {
                   const assets: StudentAsset[] = JSON.parse(raw);
+                  // 尋找對應的 Asset (最精確的方式是比對 author + type + status)
                   const targetIndex = assets.findIndex(
                       a => a.authorName === item.studentName && 
                            (a.type === item.type) &&
@@ -174,7 +180,8 @@ export const useTeacherStore = create<TeacherState>((set, get) => ({
                   if (targetIndex !== -1) {
                       assets[targetIndex].status = status;
                       assets[targetIndex].feedback = feedback;
-                      localStorage.setItem('wenxin-assets', JSON.stringify(assets));
+                      localStorage.setItem(ASSETS_STORAGE_KEY, JSON.stringify(assets));
+                      console.log('✅ 已同步更新真實資料庫');
                   }
               }
           } catch (e) {

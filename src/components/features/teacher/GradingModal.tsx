@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Check, XCircle, MessageSquare, GitGraph, FileText } from 'lucide-react';
+import { X, Check, XCircle, FileText, GitGraph } from 'lucide-react';
 import { PendingItem, useTeacherStore } from '@/store/teacher-store';
 import { ALL_LESSONS } from '@/lib/data/lessons';
 
@@ -27,28 +27,96 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
   };
 
   const quickComments = [
-      "論點清晰，結構完整！",
-      "這裡的佐證稍顯薄弱，請再補充。",
-      "嘗試多從反面觀點思考看看。",
-      "做得很棒，繼續保持！"
+      "重點標註非常精準！",
+      "對文章的理解很有深度。",
+      "請嘗試多從反面觀點思考看看。",
+      "這裡的解釋可以再具體一點。"
   ];
+
+  // 🔥 渲染帶標註的課文 (Teacher View)
+  const renderAnnotatedText = () => {
+      if (!lesson || !item.contentMock) return <p>無法載入內容</p>;
+      
+      let annotations: any[] = [];
+      try {
+          annotations = JSON.parse(item.contentMock);
+          if (!Array.isArray(annotations)) throw new Error();
+      } catch (e) {
+          return <div className="text-red-500">無法解析作業內容 (格式錯誤)</div>;
+      }
+
+      const content = lesson.content;
+      // 建立樣式對照表
+      const charStyles = new Array(content.length).fill(null);
+      
+      annotations.forEach(ann => {
+          const start = content.indexOf(ann.text);
+          if (start !== -1) {
+              for (let i = start; i < start + ann.text.length; i++) {
+                  if (!charStyles[i]) {
+                      charStyles[i] = { color: ann.color, comment: ann.comment };
+                  }
+              }
+          }
+      });
+
+      const elements = [];
+      let currentText = "";
+      let currentStyle = null;
+
+      for (let i = 0; i < content.length; i++) {
+          const style = charStyles[i];
+          if (JSON.stringify(style) !== JSON.stringify(currentStyle)) {
+              if (currentText) elements.push(renderSegment(currentText, currentStyle, i));
+              currentText = content[i];
+              currentStyle = style;
+          } else {
+              currentText += content[i];
+          }
+      }
+      if (currentText) elements.push(renderSegment(currentText, currentStyle, content.length));
+
+      return <div className="leading-loose whitespace-pre-wrap font-serif text-lg text-slate-800">{elements}</div>;
+  };
+
+  const renderSegment = (text: string, style: any, key: number) => {
+      if (!style) return <span key={key}>{text}</span>;
+      
+      const bgColors: Record<string, string> = {
+          'yellow': 'bg-yellow-200/60 border-b-2 border-yellow-400',
+          'green': 'bg-green-200/60 border-b-2 border-green-400',
+          'pink': 'bg-pink-200/60 border-b-2 border-pink-400',
+          'purple': 'bg-purple-200/60 border-b-2 border-purple-400',
+      };
+
+      return (
+          <span 
+            key={key} 
+            className={`${bgColors[style.color]} px-0.5 rounded cursor-help relative group`}
+          >
+            {text}
+            {/* Tooltip 顯示學生心得 */}
+            {style.comment && (
+                <span className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs p-2 rounded w-48 z-10 mb-1 shadow-xl pointer-events-none">
+                    {style.comment}
+                </span>
+            )}
+          </span>
+      );
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex overflow-hidden">
         
-        {/* 左側：作業內容檢視區 (Mock View) */}
-        <div className="flex-1 bg-slate-100 p-8 overflow-y-auto border-r border-slate-200 relative">
-            <div className="absolute top-4 left-4 bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-slate-500 shadow-sm border border-slate-200">
-                作業預覽模式
-            </div>
-            
-            <div className="max-w-3xl mx-auto bg-white min-h-full rounded-xl shadow-sm p-8 border border-slate-200">
+        {/* 左側：作業內容檢視區 */}
+        <div className="flex-1 bg-slate-50 p-8 overflow-y-auto border-r border-slate-200 relative">
+            <div className="max-w-3xl mx-auto bg-white min-h-full rounded-xl shadow-sm p-10 border border-slate-200">
                 <header className="mb-8 border-b border-slate-100 pb-4">
                     <h2 className="text-2xl font-bold text-slate-900 mb-2">
                         《{lesson?.title}》
                         {item.type === 'logic-map' ? '邏輯思辨結構圖' : 
-                        item.type === 'annotation' ? '閱讀重點筆記' : '讀後反思'}
+                         item.type === 'annotation' ? '閱讀重點筆記' : '讀後反思'}
                     </h2>
                     <div className="flex items-center gap-2 text-slate-500 text-sm">
                         <span>作者：{item.studentName}</span>
@@ -57,78 +125,38 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
                     </div>
                 </header>
 
-                {/* 模擬內容展示 */}
-                {item.type === 'logic-map' ? (
+                {/* 內容顯示區 */}
+                {item.type === 'annotation' ? (
+                    <div>
+                        {renderAnnotatedText()}
+                    </div>
+                ) : item.type === 'logic-map' ? (
                     <div className="flex flex-col items-center justify-center py-12 gap-6 opacity-70">
-                        {/* 這裡用 SVG 畫一個假的結構圖示意 */}
+                        {/* Mock Logic Map 示意 */}
                         <div className="flex flex-col items-center gap-8 w-full">
                             <div className="p-4 bg-orange-100 border-2 border-orange-400 rounded-lg text-orange-800 font-bold">
                                 中心論點：{lesson?.title}的主旨分析
                             </div>
                             <div className="w-0.5 h-8 bg-slate-300"></div>
                             <div className="flex gap-8 w-full justify-center">
-                                <div className="p-3 bg-white border border-slate-300 rounded shadow-sm w-1/3 text-center text-sm">
-                                    正面論述：自然的永恆
-                                </div>
-                                <div className="p-3 bg-white border border-slate-300 rounded shadow-sm w-1/3 text-center text-sm">
-                                    反面論述：人生的短暫
-                                </div>
+                                <div className="p-3 bg-white border border-slate-300 rounded shadow-sm w-1/3 text-center text-sm">正面論述</div>
+                                <div className="p-3 bg-white border border-slate-300 rounded shadow-sm w-1/3 text-center text-sm">反面論述</div>
                             </div>
                             <div className="w-0.5 h-8 bg-slate-300"></div>
-                            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-700 font-bold w-1/2 text-center">
-                                結論：物我兩忘，活在當下
-                            </div>
+                            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-700 font-bold w-1/2 text-center">結論</div>
                         </div>
-                        <p className="text-slate-400 italic text-sm mt-8">* 此為前端原型模擬畫面，實際將顯示學生繪製的 Canvas 截圖 *</p>
-                    </div>
-                ) : item.type === 'annotation' ? (
-                    // 🔥 新增：閱讀筆記渲染
-                    <div className="space-y-6">
-                        <div className="bg-blue-50 text-blue-800 p-4 rounded-lg border border-blue-200 text-sm mb-4">
-                            <span className="font-bold">作業說明：</span> 學生提交的重點標註與心得筆記。
-                        </div>
-                        
-                        <div className="space-y-4">
-                            {(() => {
-                                try {
-                                    const notes = JSON.parse(item.contentMock);
-                                    if(!Array.isArray(notes)) return <div className="text-red-500">資料格式錯誤</div>;
-                                    
-                                    return notes.map((note: any, idx: number) => (
-                                        <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className={`w-3 h-3 rounded-full ${
-                                                    note.color === 'yellow' ? 'bg-yellow-400' :
-                                                    note.color === 'green' ? 'bg-green-400' : 'bg-pink-400'
-                                                }`}></span>
-                                                <span className="text-xs font-bold text-slate-400 uppercase">
-                                                    {note.color === 'yellow' ? '重點' : note.color === 'green' ? '疑問' : '佳句'}
-                                                </span>
-                                            </div>
-                                            <div className="font-serif text-lg font-bold text-slate-800 mb-2 border-l-4 border-slate-300 pl-3">
-                                                {note.text}
-                                            </div>
-                                            <div className="text-slate-600 bg-slate-50 p-3 rounded-lg text-sm">
-                                                {note.comment || '（無文字心得）'}
-                                            </div>
-                                        </div>
-                                    ));
-                                } catch(e) {
-                                    return <div className="text-slate-400 italic">無法預覽內容 (解析錯誤)</div>;
-                                }
-                            })()}
-                        </div>
+                        <p className="text-slate-400 italic text-sm mt-8">* 此為前端原型模擬畫面，實際將顯示 Canvas 截圖 *</p>
                     </div>
                 ) : (
                     <div className="prose prose-slate max-w-none">
-                        <p>我覺得這篇文章非常有深度...</p>
+                        <p>{item.contentMock}</p>
                     </div>
                 )}
             </div>
         </div>
 
         {/* 右側：評分工具欄 */}
-        <div className="w-96 bg-white flex flex-col">
+        <div className="w-96 bg-white flex flex-col shrink-0">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="font-bold text-slate-800">作業批改</h3>
                 <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition"><X className="w-5 h-5 text-slate-400"/></button>
@@ -146,6 +174,26 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
                     </div>
                 </div>
 
+                {/* 如果是註解作業，右側也可以顯示列表供快速檢視 */}
+                {item.type === 'annotation' && (
+                    <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100 max-h-48 overflow-y-auto">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">筆記清單</h4>
+                        <div className="space-y-2">
+                            {(() => {
+                                try {
+                                    return JSON.parse(item.contentMock).map((note: any, idx: number) => (
+                                        <div key={idx} className="text-xs p-2 bg-white rounded border border-slate-200">
+                                            <span className={`inline-block w-2 h-2 rounded-full mr-2 ${note.color === 'yellow' ? 'bg-yellow-400' : note.color === 'green' ? 'bg-green-400' : 'bg-pink-400'}`}></span>
+                                            <span className="font-bold">{note.text}</span>
+                                            {note.comment && <div className="mt-1 text-slate-500 pl-4">{note.comment}</div>}
+                                        </div>
+                                    ));
+                                } catch (e) { return null; }
+                            })()}
+                        </div>
+                    </div>
+                )}
+
                 {/* 評語輸入 */}
                 <div className="mb-6">
                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">教師評語</label>
@@ -157,7 +205,7 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
                     ></textarea>
                 </div>
 
-                {/* 快速評語罐頭 */}
+                {/* 快速評語 */}
                 <div className="mb-8">
                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">快速回饋</label>
                     <div className="flex flex-wrap gap-2">
@@ -174,7 +222,7 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
                 </div>
             </div>
 
-            {/* 底部按鈕區 */}
+            {/* 底部按鈕 */}
             <div className="p-6 border-t border-slate-100 bg-slate-50/50 space-y-3">
                 <button 
                     onClick={() => handleGrade('verified')}
