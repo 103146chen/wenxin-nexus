@@ -32,6 +32,10 @@ interface UserState {
   lastLoginDate: string;
   lifetimeVotesClaimed: number;
 
+  // AI 配額相關
+  aiDailyUsage: number;
+  aiMaxDailyFree: number; // 每日免費次數
+
   quizRecords: Record<string, QuizRecord>;
   annotations: Record<string, Annotation[]>;
   classId: string | null;
@@ -60,6 +64,7 @@ interface UserState {
   toggleLike: (assetId: string) => void;
   voteForAsset: (assetId: string) => boolean; 
   checkAndClaimRewards: () => { verificationCount: number, voteCount: number, totalCoins: number, totalXp: number };
+  consumeAiQuota: () => 'success' | 'limit_reached' | 'paid_success';
 }
 
 const calculateLevelFromXp = (xp: number) => Math.floor(0.1 * Math.sqrt(xp)) || 1;
@@ -91,7 +96,11 @@ export const useUserStore = create<UserState>()(
       lastLoginDate: new Date().toISOString().split('T')[0],
       lifetimeVotesClaimed: 0,
       quizRecords: {},
-      annotations: {}, 
+      annotations: {},
+      
+      // AI初始值
+      aiDailyUsage: 0,
+      aiMaxDailyFree: 10, // 每天免費 10 句
       
       addXp: (amount) => {
         const { xp, level, coins, sp } = get();
@@ -243,8 +252,11 @@ export const useUserStore = create<UserState>()(
       
       // 🔥 修正：登入邏輯
       login: (role, username, userId) => {
-          const isTeacher = role === 'teacher';
+          const today = new Date().toISOString().split('T')[0];
+          const {lastLoginDate} = get();
+          const shouldReset = lastLoginDate !== today;
           
+          const isTeacher = role === 'teacher';
           let targetId = userId || (isTeacher ? 't-001' : 's-0');
           let targetClassId = isTeacher ? null : 'class-101';
           let targetAvatar = isTeacher ? (targetId === 't-001' ? 'scholar_m' : 'scholar_f') : 'scholar_f';
@@ -272,7 +284,9 @@ export const useUserStore = create<UserState>()(
               avatar: targetAvatar,
               title: isTeacher ? '至聖先師' : '詩仙',
               classId: targetClassId,
-              level: targetLevel
+              level: targetLevel,
+              lastLoginDate: today,
+              aiDailyUsage: shouldReset ? 0 : get().aiDailyUsage
           });
       },
 
@@ -392,6 +406,28 @@ export const useUserStore = create<UserState>()(
           } catch (e) { console.error(e); }
           
           return { verificationCount: 0, voteCount: 0, totalCoins: 0, totalXp: 0 };
+      },
+      consumeAiQuota: () => {
+          const { aiDailyUsage, aiMaxDailyFree, coins } = get();
+          const COST_PER_MSG = 10; // 超過額度後，每句扣 10 金幣
+
+          // 1. 免費額度內
+          if (aiDailyUsage < aiMaxDailyFree) {
+              set({ aiDailyUsage: aiDailyUsage + 1 });
+              return 'success';
+          }
+
+          // 2. 超過額度，扣金幣
+          if (coins >= COST_PER_MSG) {
+              set({ 
+                  coins: coins - COST_PER_MSG,
+                  aiDailyUsage: aiDailyUsage + 1
+              });
+              return 'paid_success';
+          }
+
+          // 3. 沒錢了
+          return 'limit_reached';
       }
     }),
     { name: 'wenxin-user-storage' }

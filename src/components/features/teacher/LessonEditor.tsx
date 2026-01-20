@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { Lesson, QuizSet, QuizQuestion, QuestionType, SingleChoiceQuestion, MultipleChoiceQuestion, ShortAnswerQuestion, GroupQuestion } from '@/lib/data/lessons';
-import { Save, Plus, Trash2, ChevronRight, HelpCircle, AlertCircle, MousePointerClick, LayoutList, FileText, CheckSquare, ListChecks, Type, Layers, BookOpen } from 'lucide-react';
+import { Save, Plus, Trash2, ChevronRight, HelpCircle, AlertCircle, MousePointerClick, LayoutList, FileText, CheckSquare, ListChecks, Type, Layers, BookOpen, Sparkles } from 'lucide-react';
 
 interface LessonEditorProps {
   initialData?: Lesson;
@@ -41,6 +41,10 @@ export default function LessonEditor({ initialData, onSave, mode }: LessonEditor
   const [author, setAuthor] = useState(initialData?.author || '');
   const [description, setDescription] = useState(initialData?.description || '');
   const [content, setContent] = useState(initialData?.content || '');
+  // 🔥 新增 AI Persona State
+  const [aiPersona, setAiPersona] = useState(initialData?.aiPersona || `你是一位博學的國文老師。
+請用溫和、引導的方式回答學生的問題。
+請勿直接給出答案，而是透過反問來引導思考。`);
   
   // Difficult Words
   const [words, setWords] = useState(initialData?.difficultWords || []);
@@ -311,7 +315,9 @@ export default function LessonEditor({ initialData, onSave, mode }: LessonEditor
           content,
           colorTheme: 'indigo',
           difficultWords: words,
-          quizSets
+          quizSets,
+          // 🔥 儲存 AI Persona
+          aiPersona
       };
       onSave(lessonData);
   };
@@ -322,7 +328,7 @@ export default function LessonEditor({ initialData, onSave, mode }: LessonEditor
       {/* Tabs */}
       <div className="flex border-b border-slate-100 bg-slate-50 shrink-0">
           {[
-              { id: 'basic', label: '1. 基本資訊' },
+              { id: 'basic', label: '1. 基本資訊 & AI 設定' },
               { id: 'content', label: '2. 課文與難詞' },
               { id: 'quiz', label: `3. 測驗管理 (${quizSets.length})` }
           ].map(tab => (
@@ -345,18 +351,58 @@ export default function LessonEditor({ initialData, onSave, mode }: LessonEditor
           {/* Tab 1: Basic */}
           {activeTab === 'basic' && (
               <div className="h-full overflow-y-auto p-8 animate-in fade-in">
-                  <div className="max-w-2xl mx-auto space-y-6">
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-2">課程標題</label>
-                          <input value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 border rounded-xl font-bold text-lg focus:ring-2 focus:ring-indigo-200 outline-none" placeholder="例如：岳陽樓記" />
+                  <div className="max-w-3xl mx-auto space-y-8">
+                      <div className="grid grid-cols-2 gap-6">
+                          <div>
+                              <label className="block text-sm font-bold text-slate-700 mb-2">課程標題</label>
+                              <input value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 border rounded-xl font-bold text-lg focus:ring-2 focus:ring-indigo-200 outline-none" placeholder="例如：岳陽樓記" />
+                          </div>
+                          <div>
+                              <label className="block text-sm font-bold text-slate-700 mb-2">作者</label>
+                              <input value={author} onChange={e => setAuthor(e.target.value)} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-200 outline-none" placeholder="例如：宋 ‧ 范仲淹" />
+                          </div>
                       </div>
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-2">作者</label>
-                          <input value={author} onChange={e => setAuthor(e.target.value)} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-indigo-200 outline-none" placeholder="例如：宋 ‧ 范仲淹" />
-                      </div>
+                      
                       <div>
                           <label className="block text-sm font-bold text-slate-700 mb-2">課程簡介</label>
-                          <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full p-3 border rounded-xl h-32 focus:ring-2 focus:ring-indigo-200 outline-none" placeholder="簡述課程背景..." />
+                          <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full p-3 border rounded-xl h-24 focus:ring-2 focus:ring-indigo-200 outline-none" placeholder="簡述課程背景..." />
+                      </div>
+
+                      {/* 🔥 新增 AI 設定區塊 */}
+                      <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
+                          <div className="flex items-center gap-2 mb-4">
+                              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white">
+                                  <Sparkles className="w-5 h-5" />
+                              </div>
+                              <div>
+                                  <h3 className="font-bold text-indigo-900">AI 助教角色設定 (System Prompt)</h3>
+                                  <p className="text-xs text-indigo-600">定義 AI 在「虛擬書齋」中與學生對話時的人格與限制。</p>
+                              </div>
+                          </div>
+                          
+                          <div className="bg-white rounded-xl border border-indigo-200 p-1">
+                              <textarea 
+                                  value={aiPersona} 
+                                  onChange={e => setAiPersona(e.target.value)} 
+                                  className="w-full p-4 rounded-lg h-48 focus:outline-none text-sm font-mono text-slate-700 leading-relaxed resize-none" 
+                                  placeholder="在此輸入 System Prompt..." 
+                              />
+                          </div>
+                          
+                          <div className="mt-3 flex gap-2">
+                              <button 
+                                  onClick={() => setAiPersona(`你現在是[角色名]。\n背景：[時代背景]。\n個性：[性格描述]。\n限制：不要提到現代科技。\n目標：引導學生思考[主題]。`)}
+                                  className="text-xs px-3 py-1.5 bg-white border border-indigo-200 rounded-lg text-indigo-600 font-bold hover:bg-indigo-50 transition"
+                              >
+                                  套用範本：古人角色
+                              </button>
+                              <button 
+                                  onClick={() => setAiPersona(`你是一位蘇格拉底式的導師。\n不要直接給答案，請用提問的方式引導學生自己找出答案。\n語氣要鼓勵且充滿好奇心。`)}
+                                  className="text-xs px-3 py-1.5 bg-white border border-indigo-200 rounded-lg text-indigo-600 font-bold hover:bg-indigo-50 transition"
+                              >
+                                  套用範本：引導式教學
+                              </button>
+                          </div>
                       </div>
                   </div>
               </div>

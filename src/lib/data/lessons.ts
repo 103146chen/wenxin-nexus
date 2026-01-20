@@ -1,5 +1,3 @@
-// 定義各種題型介面
-
 export type QuestionType = 'single' | 'multiple' | 'short' | 'group';
 
 export interface BaseQuestion {
@@ -56,8 +54,9 @@ export interface Lesson {
   colorTheme: string;
   difficultWords: DifficultWord[];
   quizSets: QuizSet[];
-  // 🔥 新增：課程擁有者 ID (選填，若為 undefined 代表是系統內建課程)
   ownerId?: string;
+  // 🔥 新增：AI 角色設定 (System Prompt)
+  aiPersona?: string; 
 }
 
 export function getAllQuestions(lesson: Lesson): QuizQuestion[] {
@@ -89,6 +88,12 @@ export const ALL_LESSONS: Lesson[] = [
 
 客喜而笑，洗盞更酌。肴核既盡，杯盤狼藉。相與枕藉乎舟中，不知東方之既白。`,
     colorTheme: 'orange',
+    aiPersona: `你現在是宋朝的蘇軾（蘇東坡）。
+    背景：你正與朋友泛舟於赤壁之下，剛剛寫完《赤壁賦》。
+    個性：豁達、豪放、富有哲理，對於人生無常有深刻體悟，但也能在逆境中找到快樂。
+    語言風格：請使用「半文半白」的語氣，可以引用原文，但要解釋給高中生聽。
+    限制：絕對不要提到手機、網路、AI 等現代詞彙。如果學生問這些，請用古人的方式表示困惑（例如：「此乃何物？吾未嘗聞也。」）。
+    目標：引導學生理解《赤壁賦》中「變與不變」的哲理。`,
     difficultWords: [
         { term: '既望', definition: '農曆十六日。', startIndex: 5 },
         { term: '馮虛御風', definition: '在天空中乘風飛行。馮，通「憑」，依託。', startIndex: 92 },
@@ -178,6 +183,12 @@ export const ALL_LESSONS: Lesson[] = [
 
 李氏子蟠，年十七，好古文，六藝經傳皆通習之，不拘於時，學於余。余嘉其能行古道，作《師說》以貽之。`,
     colorTheme: 'indigo',
+    aiPersona: `你現在是唐朝的韓愈。
+    背景：你剛寫完《師說》，正在提倡「古文運動」。
+    個性：嚴肅、正直、好為人師，對於當時士大夫不願從師的風氣感到痛心。
+    語言風格：鏗鏘有力，邏輯嚴密。
+    限制：不要用現代流行語。
+    目標：讓學生明白「尊師重道」的重要性。`,
     difficultWords: [
         { term: '句讀', definition: '文章中的斷句。', startIndex: 227 }, 
         { term: '老聃', definition: '老子。', startIndex: 440 },
@@ -202,6 +213,10 @@ export const ALL_LESSONS: Lesson[] = [
 
 今年九月二十八日，因坐法華西亭，望西山，始指異之。遂命僕人過湘江，緣染溪，斫榛莽，焚茅筏，窮山之高而止。攀援而登，箕踞而遨，則凡數州之土壤，皆在衽席之下。其高下之勢，岈然窪然，若垤若穴，尺寸千里，攢蹙累積，莫得遯隱。縈青繚白，外與天際，四望如一。然後知是山之特立，不與培塿為類。悠悠乎與顥氣俱，而莫得其涯；洋洋乎與造物者遊，而不知其所窮。引觴滿酌，頹然就醉，不知日之入。蒼然暮色，自遠而至，至無所見，而猶不欲歸。心凝形釋，與萬化冥合。然後知吾嚮之未始遊，遊於是乎始。故為之文以志。是歲，元和四年也。`,
     colorTheme: 'emerald',
+    aiPersona: `你現在是唐朝的柳宗元。
+    背景：你被貶到永州，心情鬱悶，直到發現西山之美。
+    個性：起初憂懼（惴慄），後轉為心凝形釋，與萬化冥合。
+    目標：分享你如何在山水中找到心靈的寄託。`,
     difficultWords: [
         { term: '僇人', definition: '罪人，指被貶謫的人。僇，通「戮」。', startIndex: 3 },
         { term: '惴慄', definition: '憂懼戰慄。', startIndex: 12 },
