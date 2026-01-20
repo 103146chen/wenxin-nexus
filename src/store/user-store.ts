@@ -16,6 +16,9 @@ interface QuizRecord {
 }
 
 interface UserState {
+  // 🔥 新增：使用者 ID (對應 Mock Data 中的 s-0, s-1...)
+  id: string;
+  
   name: string;
   title: string;
   avatar: string;
@@ -35,7 +38,7 @@ interface UserState {
   // 測驗紀錄
   quizRecords: Record<string, QuizRecord>;
 
-  // 🔥 新增：閱讀註解紀錄 (Key: lessonId)
+  // 閱讀註解紀錄 (Key: lessonId)
   annotations: Record<string, Annotation[]>;
 
   // 學生所屬班級 ID
@@ -58,7 +61,7 @@ interface UserState {
   updateQuizRecord: (lessonId: string, score: number, wrongIds: string[], isFirstTime: boolean) => void;
   correctMistake: (lessonId: string, questionId: string) => void;
   
-  // 🔥 新增：註解操作
+  // 註解操作
   addAnnotation: (lessonId: string, annotation: Omit<Annotation, 'id' | 'createdAt' | 'type'>) => void;
   removeAnnotation: (lessonId: string, id: string) => void;
 
@@ -73,28 +76,30 @@ const calculateXpForNextLevel = (currentLevel: number) => Math.pow((currentLevel
 export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
-      isLoggedIn: false,
-      role: 'guest',
-      name: '陌生的旅人',
-      title: '初入文壇',
+      // 🔥 修改：預設登入為「李白 (s-0)」，方便測試差異化教學
+      id: 's-0',
+      isLoggedIn: true, 
+      role: 'student', 
+      name: '李白',
+      title: '詩仙',
       avatar: 'scholar_m',
-      level: 1,
-      xp: 0,
-      maxXp: 100,
-      coins: 0,
-      sp: 0, 
+      classId: 'class-101', // 歸屬於高一仁班
+
+      level: 5,
+      xp: 2500,
+      maxXp: 3600,
+      coins: 800,
+      sp: 2, 
       unlockedSkills: [],
       inventory: [],
       skillCooldowns: {}, 
       activeTheme: 'default',
       activeFrame: 'default',
-      streakDays: 1,
+      streakDays: 12,
       lastLoginDate: new Date().toISOString().split('T')[0],
       quizRecords: {},
-      annotations: {}, // 初始化
+      annotations: {}, 
       
-      classId: null,
-
       addXp: (amount) => {
         const { xp, level, coins, sp } = get();
         const newXp = xp + amount;
@@ -201,7 +206,6 @@ export const useUserStore = create<UserState>()(
           });
       },
 
-      // 🔥 新增：新增註解
       addAnnotation: (lessonId, ann) => {
           set(state => {
               const current = state.annotations[lessonId] || [];
@@ -220,7 +224,6 @@ export const useUserStore = create<UserState>()(
           });
       },
 
-      // 🔥 新增：移除註解
       removeAnnotation: (lessonId, id) => {
           set(state => {
               const current = state.annotations[lessonId] || [];
@@ -245,18 +248,25 @@ export const useUserStore = create<UserState>()(
               return false;
           }
       },
+      
+      // 🔥 更新登入邏輯：賦予對應的 Mock ID
       login: (role, username) => {
+          const isTeacher = role === 'teacher';
           set({ 
               isLoggedIn: true, 
               role: role,
-              name: username || (role === 'teacher' ? '孔丘' : '李白'),
-              avatar: role === 'teacher' ? 'scholar_m' : 'scholar_f',
-              title: role === 'teacher' ? '至聖先師' : '詩仙'
+              // 如果是老師，給予 t-001；如果是學生，預設給 s-0 (李白)
+              id: isTeacher ? 't-001' : 's-0', 
+              name: username || (isTeacher ? '孔丘' : '李白'),
+              avatar: isTeacher ? 'scholar_m' : 'scholar_f',
+              title: isTeacher ? '至聖先師' : '詩仙',
+              // 老師沒有班級 ID，學生預設在高一仁班
+              classId: isTeacher ? null : 'class-101' 
           });
       },
 
       logout: () => {
-          set({ isLoggedIn: false, role: 'guest', classId: null });
+          set({ isLoggedIn: false, role: 'guest', classId: null, id: '' });
       }
     }),
     { name: 'wenxin-user-storage' }

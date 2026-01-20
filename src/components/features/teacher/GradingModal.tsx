@@ -4,9 +4,9 @@ import { useState, useMemo } from 'react';
 import { X, Check, XCircle, FileText, BrainCircuit, Maximize } from 'lucide-react';
 import { PendingItem, useTeacherStore } from '@/store/teacher-store';
 import { ALL_LESSONS } from '@/lib/data/lessons';
-import { useLessons } from '@/hooks/use-lessons'; // 使用 Hook 讀取所有課程
+import { useLessons } from '@/hooks/use-lessons'; 
 
-// 🔥 引入 React Flow 相關元件
+// 引入 React Flow 相關元件
 import ReactFlow, { Background, Controls, MiniMap, useNodesState, useEdgesState } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -19,7 +19,7 @@ interface GradingModalProps {
 export default function GradingModal({ item, isOpen, onClose }: GradingModalProps) {
   const { gradeSubmission } = useTeacherStore();
   const [feedback, setFeedback] = useState("");
-  const { getLesson } = useLessons(); // 改用 Hook 獲取課程 (支援自訂課程)
+  const { getLesson } = useLessons(); 
   
   if (!isOpen || !item) return null;
 
@@ -56,7 +56,8 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
       const charStyles = new Array(content.length).fill(null);
       
       annotations.forEach(ann => {
-          const start = content.indexOf(ann.text);
+          // 相容新舊資料結構 (startIndex 優先)
+          const start = (ann.startIndex !== undefined) ? ann.startIndex : content.indexOf(ann.text);
           if (start !== -1) {
               for (let i = start; i < start + ann.text.length; i++) {
                   if (!charStyles[i]) charStyles[i] = { color: ann.color, comment: ann.comment };
@@ -105,9 +106,8 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
       );
   };
 
-  // 🔥 新增：渲染真實邏輯圖
+  // 渲染真實邏輯圖
   const RenderLogicMap = () => {
-      // 解析資料
       const flowData = useMemo(() => {
           try {
               return JSON.parse(item.contentMock);
@@ -126,7 +126,7 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
                   defaultViewport={flowData.viewport}
                   fitView
                   attributionPosition="bottom-right"
-                  nodesDraggable={false} // 鎖定唯讀
+                  nodesDraggable={false} 
                   nodesConnectable={false}
                   elementsSelectable={true}
               >
@@ -141,12 +141,14 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
       );
   };
 
+  // 🔥 修正標題顯示邏輯
   const getTypeTitle = () => {
       switch(item.type) {
           case 'logic-map': return '邏輯思辨結構圖';
           case 'annotation': return '閱讀重點筆記';
           case 'quiz-short': return '測驗簡答題';
-          default: return '讀後反思';
+          case 'reflection': return '讀後反思'; // 明確定義
+          default: return '作業'; // 安全的 Fallback
       }
   };
 
@@ -169,7 +171,6 @@ export default function GradingModal({ item, isOpen, onClose }: GradingModalProp
                 {item.type === 'annotation' ? (
                     <div>{renderAnnotatedText()}</div>
                 ) : item.type === 'logic-map' ? (
-                    // 🔥 使用真實渲染元件
                     <RenderLogicMap />
                 ) : item.type === 'quiz-short' ? (
                     <div className="space-y-6">

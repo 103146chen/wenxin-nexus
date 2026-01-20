@@ -2,19 +2,19 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, GitGraph, BrainCircuit, PenTool, MessageSquare, Book, ChevronRight, Download, Loader2, Target, AlertCircle, CheckCircle } from "lucide-react";
+import { ArrowLeft, BookOpen, GitGraph, BrainCircuit, PenTool, MessageSquare, Book, ChevronRight, Download, Loader2, Target, AlertCircle, CheckCircle, Lock, Unlock } from "lucide-react"; // 🔥 新增 Unlock icon
 import { Sidebar } from "@/components/layout/Sidebar";
 import ChatInterface from "@/components/features/virtual-study/ChatInterface";
 import ReflectionEditor from "@/components/features/reflection/ReflectionEditor";
-import { Lesson } from "@/lib/data/lessons"; // 這裡只保留型別定義
+import { Lesson } from "@/lib/data/lessons"; 
 import { useUserStore } from "@/store/user-store";
-import { useTeacherStore } from "@/store/teacher-store"; 
+import { useTeacherStore, AssignmentLevel } from "@/store/teacher-store"; 
 import { GamificationEngine } from "@/lib/engines/GamificationEngine";
 import { PortfolioReport } from "@/components/features/portfolio/PortfolioReport";
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { StudentAsset } from "@/lib/types/gamification";
-import { useLessons } from "@/hooks/use-lessons"; // 🔥 引入我們的新 Hook
+import { useLessons } from "@/hooks/use-lessons";
 
 interface StudyRoomClientProps {
   initialLesson: Lesson;
@@ -38,14 +38,10 @@ const levelBadgeColor: Record<string, string> = {
 };
 
 export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps) {
-  const { name, title, level, quizRecords, classId } = useUserStore();
-  const { getAssignment } = useTeacherStore();
-  
-  // 🔥 改用 Hook 來獲取全站所有課程 (包含老師新增的)
+  const { name, title, level, quizRecords, classId, id: userId } = useUserStore();
+  const { getStudentLevel } = useTeacherStore();
   const { lessons } = useLessons();
   
-  // 🔥 智慧篩選：找出同作者的所有課程 (支援模糊比對)
-  // 這樣 "宋 ‧ 蘇軾" 和 "蘇軾" 的作品都會出現在右側列表中
   const authorLessons = useMemo(() => {
       const normalize = (name: string) => {
           if (!name) return '';
@@ -55,9 +51,7 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
       return lessons.filter(l => normalize(l.author) === currentAuthor);
   }, [lessons, initialLesson.author]);
   
-  // 當前選中的課程 (預設為進入的那一篇)
   const [selectedLesson, setSelectedLesson] = useState<Lesson>(initialLesson);
-  
   const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [isExporting, setIsExporting] = useState(false);
   const [logicMapImage, setLogicMapImage] = useState<string | undefined>(undefined);
@@ -66,10 +60,29 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
 
   const reportRef = useRef<HTMLDivElement>(null);
   
-  // 根據「當前選中的課程」取得任務指派
-  const assignment = classId ? getAssignment(classId, selectedLesson.id) : undefined;
+  // 1. 獲取資產狀態
+  const logicAsset = myAssets.find(a => a.id === `logic-${selectedLesson.id}`);
+  const annotationAsset = myAssets.find(a => a.id === `annotation-${selectedLesson.id}`);
+  const quizAsset = myAssets
+      .filter(a => a.type === 'quiz-short' && a.id.startsWith(selectedLesson.id))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
-  // 🔥 當 selectedLesson 改變時，重新讀取該課程的資產狀態 (讓按鈕狀態更新)
+  // 2. 獲取指派等級
+  const assignedLevel: AssignmentLevel = (classId && userId) 
+      ? (getStudentLevel(classId, selectedLesson.id, userId) || 'A')
+      : 'A';
+
+  // 3. 🔥 自動晉級邏輯 (Auto-Progression)
+  // 如果前一個任務已通過 (verified)，則視為解鎖下一級
+  const isAnnotationPassed = annotationAsset?.status === 'verified';
+  const isQuizPassed = quizAsset?.status === 'verified';
+
+  const canDoQuiz = (assignedLevel === 'A' || assignedLevel === 'B') || isAnnotationPassed;
+  const canDoLogic = (assignedLevel === 'A') || isQuizPassed;
+
+  // 顯示當前有效等級
+  const effectiveLevel = canDoLogic ? 'A' : canDoQuiz ? 'B' : 'C';
+
   useEffect(() => {
       const assets = GamificationEngine.getMyAssets(name);
       setMyAssets(assets);
@@ -110,13 +123,6 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
       });
 
   }, [selectedLesson.id, name, title, level, quizRecords]);
-
-  // 計算當前課程的任務狀態 (用於顯示按鈕上的 Badge)
-  const logicAsset = myAssets.find(a => a.id === `logic-${selectedLesson.id}`);
-  const annotationAsset = myAssets.find(a => a.id === `annotation-${selectedLesson.id}`);
-  const quizAsset = myAssets
-      .filter(a => a.type === 'quiz-short' && a.id.startsWith(selectedLesson.id))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
   const handleExport = async () => {
     if (!reportRef.current) return;
@@ -173,7 +179,6 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-8">
             <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[650px] flex flex-col relative">
-                {/* 分頁切換 */}
                 <div className="flex border-b border-slate-100 bg-slate-50/50">
                     <button onClick={() => setActiveTab('chat')} className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'chat' ? 'bg-white text-indigo-600 border-b-2 border-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
                         <MessageSquare className="w-4 h-4" /> 導師對話
@@ -184,19 +189,16 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                 </div>
 
                 <div className="flex-1 relative bg-slate-50/30">
-                    {/* Chat Tab */}
                     <div className={`absolute inset-0 flex flex-col ${activeTab === 'chat' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}>
                         <div className="px-6 py-3 bg-indigo-50/50 border-b border-indigo-100 flex items-center justify-between text-indigo-900 text-xs font-bold">
                             <span>與 {initialLesson.author} 連線中...</span>
                             <span className="bg-white px-2 py-0.5 rounded border border-indigo-100">當前討論：{selectedLesson.title}</span>
                         </div>
                         <div className="flex-1 overflow-hidden">
-                            {/* Key 加入 selectedLesson.id 以確保切換課程時對話框重置 */}
                             <ChatInterface key={selectedLesson.id} tutorName={initialLesson.author} initialMessage={`吾乃${initialLesson.author}。關於《${selectedLesson.title}》，閣下有何心得或疑問，不妨直言。`} />
                         </div>
                     </div>
 
-                    {/* Reflection Tab */}
                     <div className={`absolute inset-0 p-6 overflow-y-auto ${activeTab === 'reflection' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}>
                         <div className="max-w-2xl mx-auto">
                             <div className="mb-6 text-center">
@@ -211,7 +213,6 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
           </div>
 
           <div className="lg:col-span-4 space-y-8">
-            {/* 右側：收錄著作列表 */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-bold text-slate-500 text-xs uppercase tracking-wider mb-4 flex items-center gap-2"><Book className="w-4 h-4" /> 收錄著作</h3>
                 
@@ -236,16 +237,13 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                 </div>
             </div>
 
-            {/* 下方：修習任務 (會隨 selectedLesson 連動) */}
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500" key={`tasks-${selectedLesson.id}`}>
                 
                 <div className="flex justify-between items-end mb-2">
                     <h3 className="font-bold text-slate-500 text-xs uppercase tracking-wider">《{selectedLesson.title}》修習任務</h3>
-                    {assignment && (
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded border flex items-center gap-1 ${levelBadgeColor[assignment.level]}`}>
-                            <Target className="w-3 h-3" /> 教師指派：{assignment.level} 級
-                        </span>
-                    )}
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded border flex items-center gap-1 ${levelBadgeColor[effectiveLevel]}`}>
+                        <Target className="w-3 h-3" /> 當前權限：{effectiveLevel} 級
+                    </span>
                 </div>
 
                 {/* 閱讀按鈕 */}
@@ -271,51 +269,83 @@ export default function StudyRoomClient({ initialLesson }: StudyRoomClientProps)
                    </div>
                 </Link>
                 
-                {/* 邏輯圖按鈕 */}
-                <Link href={`/logic-map/${selectedLesson.id}`} className={`group block bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition relative overflow-hidden ${
-                    logicAsset?.status === 'rejected' ? 'border-red-300 bg-red-50/50' : 
-                    logicAsset?.status === 'verified' ? 'border-green-300 bg-green-50/50' : 
-                    'border-slate-200 hover:border-orange-300'
-                }`}>
-                   <div className="flex items-center gap-3 relative z-10">
-                       <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center"><GitGraph className="w-5 h-5" /></div>
-                       <div className="flex-1">
-                           <h3 className="font-bold text-slate-800 text-sm">邏輯思辨</h3>
-                           {logicAsset?.status === 'rejected' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1"><AlertCircle className="w-3 h-3"/> 老師已退回，請訂正</div>
-                           ) : logicAsset?.status === 'verified' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1"><CheckCircle className="w-3 h-3"/> 作業已通過</div>
-                           ) : logicAsset?.status === 'pending' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1"><Loader2 className="w-3 h-3 animate-spin"/> 等待批改中</div>
-                           ) : (
-                               <p className="text-[10px] text-slate-500">繪製結構、分析論點</p>
-                           )}
+                {/* 測驗按鈕 (B/A 級 或 閱讀已通過 可做) */}
+                {canDoQuiz ? (
+                    <Link href={`/quiz/${selectedLesson.id}`} className={`group block bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition relative overflow-hidden ${
+                        quizAsset?.status === 'rejected' ? 'border-red-300 bg-red-50/50' : 
+                        quizAsset?.status === 'verified' ? 'border-green-300 bg-green-50/50' : 
+                        'border-slate-200 hover:border-indigo-300'
+                    }`}>
+                       <div className="flex items-center gap-3 relative z-10">
+                           <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center"><BrainCircuit className="w-5 h-5" /></div>
+                           <div className="flex-1">
+                               <h3 className="font-bold text-slate-800 text-sm">測驗挑戰</h3>
+                               {/* 🔥 顯示解鎖提示 */}
+                               {isAnnotationPassed && assignedLevel === 'C' && (
+                                   <div className="flex items-center gap-1 text-[10px] text-indigo-600 font-bold mt-1"><Unlock className="w-3 h-3"/> 表現優異，已解鎖！</div>
+                               )}
+                               {quizAsset?.status === 'rejected' ? (
+                                   <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1"><AlertCircle className="w-3 h-3"/> 簡答需訂正</div>
+                               ) : quizAsset?.status === 'verified' ? (
+                                   <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1"><CheckCircle className="w-3 h-3"/> 簡答已確認</div>
+                               ) : quizAsset?.status === 'pending' ? (
+                                   <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1"><Loader2 className="w-3 h-3 animate-spin"/> 簡答批改中</div>
+                               ) : (
+                                   !isAnnotationPassed && <p className="text-[10px] text-slate-500">驗收成果、賺取獎勵</p>
+                               )}
+                           </div>
                        </div>
-                   </div>
-                </Link>
+                    </Link>
+                ) : (
+                    <div className="block bg-slate-50 p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden opacity-70 cursor-not-allowed">
+                       <div className="flex items-center gap-3 relative z-10">
+                           <div className="w-10 h-10 bg-slate-200 text-slate-400 rounded-lg flex items-center justify-center"><Lock className="w-5 h-5" /></div>
+                           <div className="flex-1">
+                               <h3 className="font-bold text-slate-500 text-sm">測驗挑戰</h3>
+                               <p className="text-[10px] text-slate-400">完成閱讀任務並通過審核後解鎖</p>
+                           </div>
+                       </div>
+                    </div>
+                )}
                 
-                {/* 測驗按鈕 */}
-                <Link href={`/quiz/${selectedLesson.id}`} className={`group block bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition relative overflow-hidden ${
-                    quizAsset?.status === 'rejected' ? 'border-red-300 bg-red-50/50' : 
-                    quizAsset?.status === 'verified' ? 'border-green-300 bg-green-50/50' : 
-                    'border-slate-200 hover:border-indigo-300'
-                }`}>
-                   <div className="flex items-center gap-3 relative z-10">
-                       <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center"><BrainCircuit className="w-5 h-5" /></div>
-                       <div className="flex-1">
-                           <h3 className="font-bold text-slate-800 text-sm">測驗挑戰</h3>
-                           {quizAsset?.status === 'rejected' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1"><AlertCircle className="w-3 h-3"/> 簡答需訂正</div>
-                           ) : quizAsset?.status === 'verified' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1"><CheckCircle className="w-3 h-3"/> 簡答已確認</div>
-                           ) : quizAsset?.status === 'pending' ? (
-                               <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1"><Loader2 className="w-3 h-3 animate-spin"/> 簡答批改中</div>
-                           ) : (
-                               <p className="text-[10px] text-slate-500">驗收成果、賺取獎勵</p>
-                           )}
+                {/* 邏輯圖按鈕 (A 級 或 測驗已通過 可做) */}
+                {canDoLogic ? (
+                    <Link href={`/logic-map/${selectedLesson.id}`} className={`group block bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition relative overflow-hidden ${
+                        logicAsset?.status === 'rejected' ? 'border-red-300 bg-red-50/50' : 
+                        logicAsset?.status === 'verified' ? 'border-green-300 bg-green-50/50' : 
+                        'border-slate-200 hover:border-orange-300'
+                    }`}>
+                       <div className="flex items-center gap-3 relative z-10">
+                           <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center"><GitGraph className="w-5 h-5" /></div>
+                           <div className="flex-1">
+                               <h3 className="font-bold text-slate-800 text-sm">邏輯思辨</h3>
+                               {isQuizPassed && assignedLevel !== 'A' && (
+                                   <div className="flex items-center gap-1 text-[10px] text-orange-600 font-bold mt-1"><Unlock className="w-3 h-3"/> 表現優異，已解鎖！</div>
+                               )}
+                               {logicAsset?.status === 'rejected' ? (
+                                   <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1"><AlertCircle className="w-3 h-3"/> 老師已退回，請訂正</div>
+                               ) : logicAsset?.status === 'verified' ? (
+                                   <div className="flex items-center gap-1 text-[10px] text-green-600 font-bold mt-1"><CheckCircle className="w-3 h-3"/> 作業已通過</div>
+                               ) : logicAsset?.status === 'pending' ? (
+                                   <div className="flex items-center gap-1 text-[10px] text-yellow-600 font-bold mt-1"><Loader2 className="w-3 h-3 animate-spin"/> 等待批改中</div>
+                               ) : (
+                                   <p className="text-[10px] text-slate-500">繪製結構、分析論點</p>
+                               )}
+                           </div>
                        </div>
-                   </div>
-                </Link>
+                    </Link>
+                ) : (
+                    <div className="block bg-slate-50 p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden opacity-70 cursor-not-allowed">
+                       <div className="flex items-center gap-3 relative z-10">
+                           <div className="w-10 h-10 bg-slate-200 text-slate-400 rounded-lg flex items-center justify-center"><Lock className="w-5 h-5" /></div>
+                           <div className="flex-1">
+                               <h3 className="font-bold text-slate-500 text-sm">邏輯思辨</h3>
+                               <p className="text-[10px] text-slate-400">通過測驗挑戰後解鎖</p>
+                           </div>
+                       </div>
+                    </div>
+                )}
+
             </div>
             
             <div className="bg-slate-100 p-5 rounded-xl text-slate-500 italic font-serif leading-relaxed text-xs border border-slate-200">

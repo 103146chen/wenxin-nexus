@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ClassRoom, LessonProgress, StudentSummary } from '@/lib/types/class-management'; // 確保引用正確
+import { ClassRoom } from '@/lib/types/class-management';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 import { StudentAsset } from '@/lib/types/gamification';
 import { Lesson } from '@/lib/data/lessons';
@@ -19,11 +19,13 @@ export interface PendingItem {
   contentMock: string;
 }
 
-interface Assignment {
+export interface Assignment {
   classId: string;
   lessonId: string;
-  level: AssignmentLevel;
+  level: AssignmentLevel; // 全班預設等級
   deadline?: string;
+  // 🔥 新增：個別學生覆寫設定 { studentId: 'A' }
+  overrides?: Record<string, AssignmentLevel>;
 }
 
 interface TeacherState {
@@ -34,12 +36,14 @@ interface TeacherState {
 
   selectClass: (classId: string) => void;
   addClass: (name: string, semester: string) => void;
-  // 🔥 新增：班級成員管理動作
   addStudent: (classId: string, name: string, studentCode: string) => void;
   removeStudent: (classId: string, studentId: string) => void;
   
   assignTask: (assignment: Assignment) => void;
   getAssignment: (classId: string, lessonId: string) => Assignment | undefined;
+  // 🔥 新增：取得特定學生的最終指派等級 (考慮覆寫)
+  getStudentLevel: (classId: string, lessonId: string, studentId: string) => AssignmentLevel | undefined;
+  
   getPendingSubmissions: () => PendingItem[];
   gradeSubmission: (item: PendingItem, status: 'verified' | 'rejected', feedback: string) => void;
   getClassById: (id: string) => ClassRoom | undefined;
@@ -81,13 +85,11 @@ export const useTeacherStore = create<TeacherState>()(
         set(state => ({ classes: [...state.classes, newClass] }));
       },
 
-      // 🔥 實作：新增學生
       addStudent: (classId, name, studentCode) => set(state => {
           const newStudentId = `student-${Date.now()}`;
-          const newStudent: StudentSummary = {
+          const newStudent = {
               id: newStudentId,
               name: name,
-              // 如果有 studentCode 可以當作頭像生成的種子，這裡簡化處理
               avatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=' + newStudentId,
               level: 1,
               xp: 0,
@@ -97,10 +99,7 @@ export const useTeacherStore = create<TeacherState>()(
           return {
               classes: state.classes.map(cls => {
                   if (cls.id !== classId) return cls;
-                  
-                  // 初始化該學生的進度矩陣 (重要！否則讀取儀表板會報錯)
-                  // 這裡我們預設初始化 'lesson-1' 到 'lesson-3'
-                  const initialProgress: Record<string, LessonProgress> = {};
+                  const initialProgress: any = {};
                   ['lesson-1', 'lesson-2', 'lesson-3'].forEach(lid => {
                       initialProgress[lid] = {
                           lessonId: lid,
@@ -111,40 +110,30 @@ export const useTeacherStore = create<TeacherState>()(
                           annotationCount: 0
                       };
                   });
-
                   return {
                       ...cls,
                       students: [...cls.students, newStudent],
-                      progressMatrix: {
-                          ...cls.progressMatrix,
-                          [newStudentId]: initialProgress
-                      }
+                      progressMatrix: { ...cls.progressMatrix, [newStudentId]: initialProgress }
                   };
               })
           };
       }),
 
-      // 🔥 實作：移除學生
       removeStudent: (classId, studentId) => set(state => ({
           classes: state.classes.map(cls => {
               if (cls.id !== classId) return cls;
-              
-              // 移除學生名單
-              const newStudents = cls.students.filter(s => s.id !== studentId);
-              
-              // 移除進度資料 (清理垃圾)
               const newMatrix = { ...cls.progressMatrix };
               delete newMatrix[studentId];
-
               return {
                   ...cls,
-                  students: newStudents,
+                  students: cls.students.filter(s => s.id !== studentId),
                   progressMatrix: newMatrix
               };
           })
       })),
 
       assignTask: (newAssignment) => set(state => {
+        // 移除舊的同課程指派，加入新的
         const filtered = state.activeAssignments.filter(
             a => !(a.classId === newAssignment.classId && a.lessonId === newAssignment.lessonId)
         );
@@ -153,6 +142,19 @@ export const useTeacherStore = create<TeacherState>()(
 
       getAssignment: (classId, lessonId) => {
           return get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
+      },
+
+      // 🔥 核心邏輯：判斷學生等級 (Override > Default)
+      getStudentLevel: (classId, lessonId, studentId) => {
+          const assignment = get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
+          if (!assignment) return undefined; // 尚未派題
+          
+          // 如果有個別覆寫，優先使用
+          if (assignment.overrides && assignment.overrides[studentId]) {
+              return assignment.overrides[studentId];
+          }
+          // 否則回傳全班預設
+          return assignment.level;
       },
 
       getPendingSubmissions: () => {
@@ -214,7 +216,6 @@ export const useTeacherStore = create<TeacherState>()(
           set(state => {
               const newClasses = state.classes.map(cls => {
                   if (cls.id !== item.classId) return cls;
-                  // 安全存取 progressMatrix
                   const studentProgress = cls.progressMatrix?.[item.studentId]?.[item.lessonId];
                   if (!studentProgress) return cls;
 
