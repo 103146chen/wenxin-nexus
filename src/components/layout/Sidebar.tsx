@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { UserProfileCard } from "@/components/gamification/UserProfileCard";
 import { useEffect } from "react";
+import { Sun, Calendar } from "lucide-react";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -45,6 +46,7 @@ export function Sidebar() {
     { name: '指揮中心', href: '/dashboard', icon: LayoutDashboard },
     { name: '課程管理', href: '/teacher/lessons', icon: Library }, 
     { name: '作業批閱', href: '/teacher/verification', icon: CheckCircle }, 
+    { name: '每日閱讀管理', href: '/teacher/daily-manager', icon: Calendar },
   ] : [
     { name: '虛擬書齋', href: '/study', icon: BookOpen },
     { name: '技能樹', href: '/skills', icon: GraduationCap },

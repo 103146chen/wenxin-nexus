@@ -1,4 +1,4 @@
-import { LucideIcon, Palette, User, Coffee, Ticket, Star } from "lucide-react";
+import { LucideIcon, Palette, User, Coffee, Ticket, Star, Snowflake, Zap } from "lucide-react";
 
 export type ProductType = 'theme' | 'avatar' | 'item' | 'perk';
 export type RedemptionStatus = 'pending' | 'approved' | 'rejected' | 'consumed';
@@ -9,13 +9,11 @@ export interface StoreItem {
   name: string;
   description: string;
   price: number;
-  iconName: string; // 儲存 Icon 的字串名稱，因為無法將元件存入 LocalStorage
-  
-  // 🔥 新增：福利社 2.0 欄位
-  isSystem: boolean;      // true=系統全域商品, false=老師自訂商品
-  ownerId?: string;       // 賣家 ID (老師 ID)
-  stock?: number;         // 庫存 (undefined = 無限)
-  allowMultiple?: boolean; // 是否允許重複購買
+  iconName: string;
+  isSystem: boolean;      
+  ownerId?: string;       
+  stock?: number;         
+  allowMultiple?: boolean; 
 }
 
 export interface Redemption {
@@ -25,14 +23,13 @@ export interface Redemption {
   classId: string;
   itemId: string;
   itemName: string;
-  teacherId: string; // 負責審核的老師
+  teacherId: string;
   status: RedemptionStatus;
   createdAt: string;
   updatedAt?: string;
-  note?: string; // 學生留言或老師回饋
+  note?: string;
 }
 
-// 預設系統商品 (系統全域)
 export const SYSTEM_ITEMS: StoreItem[] = [
   {
     id: 'theme-dark',
@@ -55,6 +52,26 @@ export const SYSTEM_ITEMS: StoreItem[] = [
     allowMultiple: false
   },
   {
+    id: 'streak-freeze',
+    type: 'item',
+    name: '連勝凍結卡',
+    description: '錯過一天簽到？沒關係，這張卡能保住你的連勝紀錄！（自動消耗）',
+    price: 200,
+    iconName: 'Snowflake',
+    isSystem: true,
+    allowMultiple: true // 可以買多張囤著
+  },
+  {
+    id: 'xp-boost',
+    type: 'item',
+    name: '經驗加倍券',
+    description: '接下來 24 小時獲得的 XP 加倍。（開發中）',
+    price: 150,
+    iconName: 'Zap',
+    isSystem: true,
+    allowMultiple: true
+  },
+  {
     id: 'avatar-frame-gold',
     type: 'avatar',
     name: '黃金桂冠框',
@@ -64,19 +81,8 @@ export const SYSTEM_ITEMS: StoreItem[] = [
     isSystem: true,
     allowMultiple: false
   },
-  {
-    id: 'avatar-frame-leaves',
-    type: 'avatar',
-    name: '文青竹葉框',
-    description: '淡泊名利，寧靜致遠。',
-    price: 200,
-    iconName: 'User',
-    isSystem: true,
-    allowMultiple: false
-  }
 ];
 
-// 用於 UI 顯示的 Icon 對照表
 export const ICON_MAP: Record<string, any> = {
-    Palette, User, Coffee, Ticket, Star
+    Palette, User, Coffee, Ticket, Star, Snowflake, Zap
 };
