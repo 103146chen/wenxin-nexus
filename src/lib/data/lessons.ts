@@ -41,10 +41,9 @@ export interface DifficultWord {
   startIndex: number;
 }
 
-// 🔥 新增：測驗卷介面
 export interface QuizSet {
   id: string;
-  title: string; // e.g. "課前預習", "進階挑戰"
+  title: string;
   questions: QuizQuestion[];
 }
 
@@ -56,14 +55,13 @@ export interface Lesson {
   content: string;
   colorTheme: string;
   difficultWords: DifficultWord[];
-  // 🔥 修改：支援多組測驗
   quizSets: QuizSet[];
+  // 🔥 新增：課程擁有者 ID (選填，若為 undefined 代表是系統內建課程)
+  ownerId?: string;
 }
 
-// 🔥 輔助函式：取得課程中所有題目 (用於統計分析)
 export function getAllQuestions(lesson: Lesson): QuizQuestion[] {
   return lesson.quizSets.flatMap(set => {
-    // 處理 GroupQuestion 的子題，確保統計 ID 時能找到
     const flat: QuizQuestion[] = [];
     set.questions.forEach(q => {
         flat.push(q);
@@ -99,7 +97,6 @@ export const ALL_LESSONS: Lesson[] = [
         { term: '蜉蝣', definition: '一種朝生暮死的小蟲，比喻人生短暫。', startIndex: 405 },
         { term: '無盡藏', definition: '佛家語，指無窮無盡的寶藏。', startIndex: 559 }
     ],
-    // 🔥 升級：將舊題目包裝進預設測驗卷
     quizSets: [
       {
         id: 'set-default',
@@ -164,21 +161,6 @@ export const ALL_LESSONS: Lesson[] = [
               }
             ]
           }
-        ]
-      },
-      // 模擬：第二份試卷
-      {
-        id: 'set-advanced',
-        title: '進階思辨挑戰',
-        questions: [
-           {
-            id: 'q1-adv-1',
-            type: 'short',
-            question: '蘇軾在文中提到「物與我皆無盡也」，這與道家的「齊物論」有何異同？請簡要分析。',
-            explanation: '此題旨在測驗學生對於跨文本哲理的比較能力。',
-            guidance: '從「相對」與「絕對」的觀點切入。',
-            referenceAnswer: '（略）'
-          } 
         ]
       }
     ]

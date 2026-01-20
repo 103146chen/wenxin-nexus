@@ -4,6 +4,8 @@ import { ClassRoom } from '@/lib/types/class-management';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 import { StudentAsset } from '@/lib/types/gamification';
 import { Lesson, QuizSet } from '@/lib/data/lessons';
+// 🔥 引入 user-store 以獲取當前登入者 ID
+import { useUserStore } from '@/store/user-store';
 
 export type AssignmentLevel = 'A' | 'B' | 'C';
 
@@ -66,21 +68,24 @@ const getRealSubmissions = (): StudentAsset[] => {
 export const useTeacherStore = create<TeacherState>()(
   persist(
     (set, get) => ({
-      classes: MOCK_CLASSES,
-      selectedClassId: MOCK_CLASSES[0].id,
+      classes: MOCK_CLASSES, // 初始載入所有班級
+      selectedClassId: null, // 預設不選中，讓 Dashboard 自動選取第一個屬於該老師的班級
       activeAssignments: [],
       customLessons: [],
 
       selectClass: (classId) => set({ selectedClassId: classId }),
       
       addClass: (name, semester) => {
+        // 🔥 獲取當前登入者 ID
+        const currentTeacherId = useUserStore.getState().id;
+        
         const newClass: ClassRoom = {
           id: `class-${Date.now()}`,
           name,
           code: `WEN-${Math.floor(Math.random() * 900) + 100}`,
           semester,
-          // 🔥 修正：補上 ownerId，暫時預設為 't-001'
-          ownerId: 't-001',
+          // 🔥 綁定 ownerId
+          ownerId: currentTeacherId,
           students: [],
           progressMatrix: {}
         };
@@ -157,6 +162,7 @@ export const useTeacherStore = create<TeacherState>()(
 
       getPendingSubmissions: () => {
           const { classes } = get();
+          // 🔥 這裡不做過濾，因為 Component 會篩選班級，間接篩選了學生
           const pendingItems: PendingItem[] = [];
           const realAssets = getRealSubmissions();
 
@@ -258,10 +264,18 @@ export const useTeacherStore = create<TeacherState>()(
       },
 
       getClassById: (id) => get().classes.find(c => c.id === id),
-      addLesson: (lesson) => set((state) => ({ customLessons: [...state.customLessons, lesson] })),
+      
+      addLesson: (lesson) => {
+          const currentTeacherId = useUserStore.getState().id;
+          // 🔥 確保新課程有 ownerId
+          const newLesson = { ...lesson, ownerId: currentTeacherId };
+          set((state) => ({ customLessons: [...state.customLessons, newLesson] }));
+      },
+      
       updateLesson: (lessonId, updates) => set((state) => ({
           customLessons: state.customLessons.map(l => l.id === lessonId ? { ...l, ...updates } : l)
       })),
+      
       deleteLesson: (id) => set((state) => ({ customLessons: state.customLessons.filter(l => l.id !== id) })),
     }),
     { name: 'wenxin-teacher-storage' }

@@ -6,9 +6,13 @@ import { ALL_LESSONS } from "@/lib/data/lessons";
 import Link from "next/link";
 import { Plus, Edit3, Trash2, BookOpen, FileText, MoreVertical, Copy } from "lucide-react";
 import { useState } from "react";
+// 🔥 引入 hook
+import { useLessons } from "@/hooks/use-lessons";
 
 export default function LessonListPage() {
-  const { customLessons, deleteLesson, addLesson } = useTeacherStore();
+  const { deleteLesson, addLesson } = useTeacherStore();
+  // 🔥 改用 myCustomLessons
+  const { myCustomLessons } = useLessons();
   
   const handleDelete = (id: string, title: string) => {
       if (confirm(`確定要刪除課程《${title}》嗎？此動作無法復原。`)) {
@@ -22,7 +26,8 @@ export default function LessonListPage() {
               ...lesson,
               id: `custom-${Date.now()}`,
               title: `${lesson.title} (副本)`,
-              author: '我 (改編)'
+              author: '我 (改編)',
+              // 這裡不需要手動加 ownerId，addLesson 會自動處理
           };
           addLesson(newLesson);
           alert('複製成功！請在自訂課程列表中進行編輯。');
@@ -44,20 +49,20 @@ export default function LessonListPage() {
             </Link>
         </div>
 
-        {/* 自訂課程區 */}
+        {/* 自訂課程區 - 改用 myCustomLessons */}
         <section className="mb-12">
             <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-indigo-600"/> 我的自訂課程
             </h2>
             
-            {customLessons.length === 0 ? (
+            {myCustomLessons.length === 0 ? (
                 <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-12 text-center text-slate-400">
                     <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50"/>
                     <p>尚無自訂課程，點擊右上角按鈕開始建立。</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {customLessons.map(lesson => (
+                    {myCustomLessons.map(lesson => (
                         <div key={lesson.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition flex flex-col group">
                             <div className="flex justify-between items-start mb-4">
                                 <div>

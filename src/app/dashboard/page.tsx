@@ -16,13 +16,13 @@ import {
   Target,
   BarChart2,
   Loader2,
-  Settings 
+  Settings,
+  BookOpen
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import DifferentiationModal from "@/components/features/teacher/DifferentiationModal";
 import ClassManagementModal from "@/components/features/teacher/ClassManagementModal";
-// 🔥 引入 Helper
 import { getAllQuestions } from "@/lib/data/lessons";
 
 export default function TeacherDashboard() {
@@ -32,12 +32,23 @@ export default function TeacherDashboard() {
   const currentClass = classes.find(c => c.id === selectedClassId) || classes[0];
   const pendingItems = getPendingSubmissions(); 
 
+  // 預設選中第一個進行中的課程，如果沒有則選 lesson-1
   const [selectedLessonId, setSelectedLessonId] = useState('lesson-1'); 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
+
+  // 🔥 取得該班級所有「進行中」的任務
+  const classActiveAssignments = activeAssignments.filter(a => a.classId === currentClass.id);
+
+  // 自動切換到第一個進行中的課程 (僅在初始化時)
+  useEffect(() => {
+      if (classActiveAssignments.length > 0 && selectedLessonId === 'lesson-1') {
+          setSelectedLessonId(classActiveAssignments[0].lessonId);
+      }
+  }, [classActiveAssignments, selectedLessonId]);
 
   const dashboardData = useMemo(() => {
       let totalStudents = 0;
@@ -91,7 +102,6 @@ export default function TeacherDashboard() {
 
       const lesson = lessons.find(l => l.id === selectedLessonId);
       
-      // 🔥 修正：使用 getAllQuestions 獲取所有題目
       const allQuestions = lesson ? getAllQuestions(lesson) : [];
 
       const wrongStats = Object.entries(wrongCounts)
@@ -117,8 +127,6 @@ export default function TeacherDashboard() {
     { name: '已完成', value: dashboardData.lessonStats.completed, color: '#10b981' },
     { name: '未完成', value: dashboardData.totalStudents - dashboardData.lessonStats.completed, color: '#e2e8f0' },
   ];
-
-  const currentAssignment = activeAssignments.find(a => a.classId === currentClass.id && a.lessonId === selectedLessonId);
 
   if (!isMounted) {
       return (
@@ -169,16 +177,16 @@ export default function TeacherDashboard() {
 
         {/* 1. 數據概覽卡片 */}
         <div className="grid grid-cols-4 gap-6 mb-10">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-indigo-300 transition">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
                 <div>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">班級總人數</p>
                     <h3 className="text-3xl font-bold text-slate-800">{dashboardData.totalStudents}</h3>
                 </div>
-                <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition">
+                <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
                     <Users className="w-6 h-6" />
                 </div>
             </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-indigo-300 transition">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
                 <div>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">待批改作業</p>
                     <h3 className="text-3xl font-bold text-slate-800 flex items-end gap-2">
@@ -186,25 +194,25 @@ export default function TeacherDashboard() {
                         {dashboardData.pendingCount > 0 && <span className="flex h-3 w-3 relative mb-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span></span>}
                     </h3>
                 </div>
-                <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center group-hover:scale-110 transition">
+                <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center">
                     <AlertCircle className="w-6 h-6" />
                 </div>
             </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-indigo-300 transition">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
                 <div>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">測驗平均分</p>
                     <h3 className="text-3xl font-bold text-slate-800">{dashboardData.avgScore} <span className="text-sm text-slate-400 font-medium">/ 5.0</span></h3>
                 </div>
-                <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition">
+                <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
                     <TrendingUp className="w-6 h-6" />
                 </div>
             </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-indigo-300 transition">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
                 <div>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">任務參與率</p>
                     <h3 className="text-3xl font-bold text-slate-800">{dashboardData.completionRate}%</h3>
                 </div>
-                <div className="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition">
+                <div className="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center">
                     <CheckCircle className="w-6 h-6" />
                 </div>
             </div>
@@ -235,12 +243,7 @@ export default function TeacherDashboard() {
                             pendingItems.slice(0, 10).map((item, idx) => {
                                 const relatedLesson = lessons.find(l => l.id === item.lessonId);
                                 const lessonTitle = relatedLesson?.title || item.lessonId;
-                                
-                                const displayType = item.type === 'logic-map' ? '邏輯圖' 
-                                                  : item.type === 'annotation' ? '閱讀筆記' 
-                                                  : item.type === 'quiz-short' ? '簡答題'
-                                                  : item.type === 'reflection' ? '讀後反思' 
-                                                  : '作業';
+                                const displayType = item.type === 'logic-map' ? '邏輯圖' : item.type === 'annotation' ? '閱讀筆記' : item.type === 'quiz-short' ? '簡答題' : '作業';
 
                                 return (
                                     <div key={idx} className="p-4 hover:bg-slate-50 transition flex items-center justify-between group">
@@ -268,64 +271,68 @@ export default function TeacherDashboard() {
                 </div>
             </div>
 
-            {/* 右側：班級概況與快速入口 */}
+            {/* 右側：進行中課程列表 */}
             <div className="col-span-4 space-y-6">
+                
+                {/* 1. 班級資訊卡 */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start mb-4">
                         <h3 className="font-bold text-slate-800 flex items-center gap-2">
                             <GraduationCap className="w-5 h-5 text-indigo-600" />
                             {currentClass.name}
                         </h3>
-                        <button 
-                            onClick={() => setIsClassModalOpen(true)}
-                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition" 
-                            title="管理成員"
-                        >
-                            <Settings className="w-4 h-4" />
-                        </button>
+                        <button onClick={() => setIsClassModalOpen(true)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition"><Settings className="w-4 h-4" /></button>
                     </div>
                     <div className="space-y-4">
                         <div className="flex justify-between items-center text-sm">
                             <span className="text-slate-500">班級代碼</span>
                             <span className="font-mono font-bold bg-slate-100 px-2 py-1 rounded">{currentClass.code}</span>
                         </div>
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-slate-500">學生人數</span>
-                            <span className="font-bold">{currentClass.students.length} 人</span>
-                        </div>
                         <div className="pt-4 border-t border-slate-100">
-                            <button 
-                                onClick={() => setIsClassModalOpen(true)}
-                                className="w-full py-2 bg-slate-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-50 transition border border-slate-200 hover:border-indigo-200"
-                            >
-                                管理班級成員
+                            <button onClick={() => setIsAssignModalOpen(true)} className="w-full py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition flex items-center justify-center gap-2 shadow-sm">
+                                <Target className="w-4 h-4" /> 指派新任務
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-indigo-600 to-violet-700 text-white p-8 rounded-3xl shadow-lg shadow-indigo-200 flex flex-col justify-between relative overflow-hidden group h-[220px]">
-                    <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl"></div>
-                    <div>
-                        <h3 className="text-indigo-200 font-bold text-xs uppercase tracking-wider mb-4">當前課程：{lessons.find(l=>l.id===selectedLessonId)?.title}</h3>
-                        {currentAssignment ? (
-                            <>
-                                <div className="flex items-center gap-2 mb-1">
-                                    <div className="text-5xl font-bold">{currentAssignment.level}</div>
-                                    <div className="text-xl font-medium opacity-80">級任務</div>
-                                </div>
-                                <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold inline-block mt-2">進行中</span>
-                            </>
+                {/* 2. 進行中課程列表 */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="p-4 border-b border-slate-100 bg-slate-50">
+                        <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                            <BookOpen className="w-4 h-4 text-indigo-600"/> 進行中課程 ({classActiveAssignments.length})
+                        </h3>
+                    </div>
+                    
+                    <div className="max-h-[200px] overflow-y-auto">
+                        {classActiveAssignments.length === 0 ? (
+                            <div className="p-8 text-center text-slate-400 text-xs">
+                                尚未指派任何任務
+                            </div>
                         ) : (
-                            <>
-                                <div className="text-3xl font-bold mb-1">尚未派題</div>
-                                <p className="text-indigo-200 text-sm">設定分級任務，引導學生學習。</p>
-                            </>
+                            classActiveAssignments.map(assignment => {
+                                const lesson = lessons.find(l => l.id === assignment.lessonId);
+                                const isSelected = selectedLessonId === assignment.lessonId;
+                                return (
+                                    <button
+                                        key={assignment.lessonId}
+                                        onClick={() => setSelectedLessonId(assignment.lessonId)}
+                                        className={`w-full text-left p-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition flex justify-between items-center ${isSelected ? 'bg-indigo-50 border-indigo-100' : ''}`}
+                                    >
+                                        <div>
+                                            <div className={`font-bold text-sm ${isSelected ? 'text-indigo-700' : 'text-slate-700'}`}>
+                                                {lesson?.title || '未知課程'}
+                                            </div>
+                                            <div className="text-xs text-slate-500 mt-1">
+                                                預設等級: <span className="font-mono font-bold bg-white border px-1 rounded">{assignment.level}</span>
+                                            </div>
+                                        </div>
+                                        {isSelected && <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>}
+                                    </button>
+                                );
+                            })
                         )}
                     </div>
-                    <button onClick={() => setIsAssignModalOpen(true)} className="mt-4 w-full py-3 bg-white text-indigo-700 hover:bg-indigo-50 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm">
-                        <Target className="w-4 h-4" /> {currentAssignment ? '調整任務' : '立即派題'}
-                    </button>
                 </div>
             </div>
         </div>
@@ -333,22 +340,9 @@ export default function TeacherDashboard() {
         {/* 課程詳細分析 */}
         <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-slate-800 text-lg">課程詳細分析</h3>
-                <div className="flex gap-2">
-                    {lessons.map(lesson => (
-                        <button
-                            key={lesson.id}
-                            onClick={() => setSelectedLessonId(lesson.id)}
-                            className={`px-4 py-2 rounded-full text-xs font-bold transition whitespace-nowrap ${
-                                selectedLessonId === lesson.id 
-                                    ? 'bg-slate-800 text-white shadow-md' 
-                                    : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200'
-                            }`}
-                        >
-                            {lesson.title}
-                        </button>
-                    ))}
-                </div>
+                <h3 className="font-bold text-slate-800 text-lg">
+                    {lessons.find(l => l.id === selectedLessonId)?.title} - 學習分析
+                </h3>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -411,6 +405,7 @@ export default function TeacherDashboard() {
             </div>
         </div>
 
+        {/* 學生名單 (已補回) */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800">學生名單 ({dashboardData.totalStudents})</h3>
@@ -464,7 +459,7 @@ export default function TeacherDashboard() {
                 </table>
             </div>
         </div>
-
+        
         <DifferentiationModal 
             classId={currentClass.id}
             isOpen={isAssignModalOpen}
