@@ -17,33 +17,55 @@ import {
   BarChart2,
   Loader2,
   Settings,
-  BookOpen
+  BookOpen,
+  Store, // 🔥 Import Store icon
+  Ticket
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import DifferentiationModal from "@/components/features/teacher/DifferentiationModal";
 import ClassManagementModal from "@/components/features/teacher/ClassManagementModal";
+import StoreManagerModal from "@/components/features/teacher/StoreManagerModal"; // 🔥 Import
+import RedemptionModal from "@/components/features/teacher/RedemptionModal"; // 🔥 Import
 import { getAllQuestions } from "@/lib/data/lessons";
+import { StoreEngine } from "@/lib/engines/StoreEngine"; // 🔥 Import
+import { useUserStore } from "@/store/user-store"; // 🔥 Import
 
 export default function TeacherDashboard() {
   const { classes, selectedClassId, selectClass, getPendingSubmissions, activeAssignments } = useTeacherStore();
   const { lessons } = useLessons();
+  const { id: teacherId } = useUserStore();
 
   const currentClass = classes.find(c => c.id === selectedClassId) || classes[0];
   const pendingItems = getPendingSubmissions(); 
 
-  // 預設選中第一個進行中的課程，如果沒有則選 lesson-1
   const [selectedLessonId, setSelectedLessonId] = useState('lesson-1'); 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  // 🔥 新增 Modal 狀態
+  const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
+  const [isRedemptionModalOpen, setIsRedemptionModalOpen] = useState(false);
+  const [pendingRedemptionsCount, setPendingRedemptionsCount] = useState(0);
   
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
 
-  // 🔥 取得該班級所有「進行中」的任務
+  // 🔥 檢查待核銷數量 (每 5 秒或當 modal 關閉時更新)
+  useEffect(() => {
+      const checkRedemptions = () => {
+          if (teacherId) {
+              const count = StoreEngine.getPendingRedemptions(teacherId).length;
+              setPendingRedemptionsCount(count);
+          }
+      };
+      
+      checkRedemptions();
+      const interval = setInterval(checkRedemptions, 5000);
+      return () => clearInterval(interval);
+  }, [teacherId, isRedemptionModalOpen]);
+
   const classActiveAssignments = activeAssignments.filter(a => a.classId === currentClass.id);
 
-  // 自動切換到第一個進行中的課程 (僅在初始化時)
   useEffect(() => {
       if (classActiveAssignments.length > 0 && selectedLessonId === 'lesson-1') {
           setSelectedLessonId(classActiveAssignments[0].lessonId);
@@ -56,18 +78,15 @@ export default function TeacherDashboard() {
       let quizCount = 0;
       let completedTasks = 0;
       let totalAssignedTasks = 0;
-      
       let lessonCompleted = 0;
       let lessonPending = 0;
       let lessonLowScore = 0;
-      
       const wrongCounts: Record<string, number> = {};
 
       const targetClasses = selectedClassId ? [currentClass] : classes;
 
       targetClasses.forEach(cls => {
           totalStudents += cls.students.length;
-          
           if (cls.progressMatrix) {
               Object.values(cls.progressMatrix).forEach(studentProgress => {
                   Object.values(studentProgress).forEach(p => {
@@ -86,7 +105,6 @@ export default function TeacherDashboard() {
                       if (p.status === 'completed' || p.quizScore !== undefined) lessonCompleted++;
                       if (p.logicMapStatus === 'pending') lessonPending++;
                       if (p.quizScore && p.quizScore < 3) lessonLowScore++;
-                      
                       if (p.quizWrongIds) {
                           p.quizWrongIds.forEach(qid => {
                               wrongCounts[qid] = (wrongCounts[qid] || 0) + 1;
@@ -99,11 +117,8 @@ export default function TeacherDashboard() {
 
       const avgScore = quizCount > 0 ? (totalQuizScore / quizCount).toFixed(1) : "0.0";
       const completionRate = totalAssignedTasks > 0 ? Math.round((completedTasks / totalAssignedTasks) * 100) : 0;
-
       const lesson = lessons.find(l => l.id === selectedLessonId);
-      
       const allQuestions = lesson ? getAllQuestions(lesson) : [];
-
       const wrongStats = Object.entries(wrongCounts)
           .map(([qid, count]) => {
               const question = allQuestions.find(q => q.id === qid);
@@ -114,9 +129,7 @@ export default function TeacherDashboard() {
           .slice(0, 5);
 
       return {
-          totalStudents,
-          avgScore,
-          completionRate,
+          totalStudents, avgScore, completionRate,
           pendingCount: pendingItems.length,
           lessonStats: { completed: lessonCompleted, pending: lessonPending, lowScore: lessonLowScore },
           wrongStats
@@ -154,6 +167,29 @@ export default function TeacherDashboard() {
             </div>
             
             <div className="flex gap-3">
+                {/* 🔥 新增：福利社管理按鈕 */}
+                <button 
+                    onClick={() => setIsStoreModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-white text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition font-bold"
+                >
+                    <Store className="w-4 h-4" /> 商店管理
+                </button>
+
+                {/* 🔥 新增：核銷中心按鈕 (有紅點) */}
+                <button 
+                    onClick={() => setIsRedemptionModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-white text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition font-bold relative"
+                >
+                    <Ticket className="w-4 h-4" /> 獎勵核銷
+                    {pendingRedemptionsCount > 0 && (
+                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] rounded-full flex items-center justify-center border-2 border-slate-50">
+                            {pendingRedemptionsCount}
+                        </span>
+                    )}
+                </button>
+
+                <div className="w-px h-10 bg-slate-200 mx-1"></div>
+
                 <Link href="/teacher/lessons/new" className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl shadow hover:bg-slate-800 transition font-bold">
                     <Plus className="w-4 h-4" /> 建立新課程
                 </Link>
@@ -177,6 +213,7 @@ export default function TeacherDashboard() {
 
         {/* 1. 數據概覽卡片 */}
         <div className="grid grid-cols-4 gap-6 mb-10">
+            {/* ... (保持原樣) ... */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
                 <div>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">班級總人數</p>
@@ -218,9 +255,9 @@ export default function TeacherDashboard() {
             </div>
         </div>
 
+        {/* 主內容區 */}
         <div className="grid grid-cols-12 gap-8 mb-10">
-            
-            {/* 左側：待辦事項清單 */}
+            {/* 左側：待辦事項清單 (保持原樣) */}
             <div className="col-span-8">
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-full flex flex-col">
                     <div className="p-6 border-b border-slate-100 flex justify-between items-center">
@@ -271,10 +308,8 @@ export default function TeacherDashboard() {
                 </div>
             </div>
 
-            {/* 右側：進行中課程列表 */}
+            {/* 右側：進行中課程列表 (保持原樣) */}
             <div className="col-span-4 space-y-6">
-                
-                {/* 1. 班級資訊卡 */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start mb-4">
                         <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -296,7 +331,6 @@ export default function TeacherDashboard() {
                     </div>
                 </div>
 
-                {/* 2. 進行中課程列表 */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="p-4 border-b border-slate-100 bg-slate-50">
                         <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
@@ -339,6 +373,7 @@ export default function TeacherDashboard() {
 
         {/* 課程詳細分析 */}
         <div className="mb-8">
+            {/* ... (保持原樣) ... */}
             <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold text-slate-800 text-lg">
                     {lessons.find(l => l.id === selectedLessonId)?.title} - 學習分析
@@ -405,7 +440,7 @@ export default function TeacherDashboard() {
             </div>
         </div>
 
-        {/* 學生名單 (已補回) */}
+        {/* 學生名單 */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800">學生名單 ({dashboardData.totalStudents})</h3>
@@ -460,6 +495,7 @@ export default function TeacherDashboard() {
             </div>
         </div>
         
+        {/* Modals */}
         <DifferentiationModal 
             classId={currentClass.id}
             isOpen={isAssignModalOpen}
@@ -470,6 +506,17 @@ export default function TeacherDashboard() {
             classId={currentClass.id}
             isOpen={isClassModalOpen}
             onClose={() => setIsClassModalOpen(false)}
+        />
+
+        {/* 🔥 新增：掛載商店相關 Modal */}
+        <StoreManagerModal
+            isOpen={isStoreModalOpen}
+            onClose={() => setIsStoreModalOpen(false)}
+        />
+
+        <RedemptionModal
+            isOpen={isRedemptionModalOpen}
+            onClose={() => setIsRedemptionModalOpen(false)}
         />
 
       </div>

@@ -1,62 +1,82 @@
+import { LucideIcon, Palette, User, Coffee, Ticket, Star } from "lucide-react";
+
+export type ProductType = 'theme' | 'avatar' | 'item' | 'perk';
+export type RedemptionStatus = 'pending' | 'approved' | 'rejected' | 'consumed';
+
 export interface StoreItem {
   id: string;
+  type: ProductType;
   name: string;
   description: string;
   price: number;
-  // 🔥 新增 consumable
-  category: 'theme' | 'avatar' | 'consumable';
-  previewColor?: string;
-  image?: string;
+  iconName: string; // 儲存 Icon 的字串名稱，因為無法將元件存入 LocalStorage
+  
+  // 🔥 新增：福利社 2.0 欄位
+  isSystem: boolean;      // true=系統全域商品, false=老師自訂商品
+  ownerId?: string;       // 賣家 ID (老師 ID)
+  stock?: number;         // 庫存 (undefined = 無限)
+  allowMultiple?: boolean; // 是否允許重複購買
 }
 
-export const STORE_ITEMS: StoreItem[] = [
-  // --- Themes ---
-  {
-    id: 'theme-sepia',
-    name: '護眼羊皮紙',
-    description: '溫暖的米黃色調，適合長時間閱讀。',
-    price: 150,
-    category: 'theme',
-    previewColor: '#fdf6e3'
-  },
+export interface Redemption {
+  id: string;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  itemId: string;
+  itemName: string;
+  teacherId: string; // 負責審核的老師
+  status: RedemptionStatus;
+  createdAt: string;
+  updatedAt?: string;
+  note?: string; // 學生留言或老師回饋
+}
+
+// 預設系統商品 (系統全域)
+export const SYSTEM_ITEMS: StoreItem[] = [
   {
     id: 'theme-dark',
-    name: '靜謐深夜',
-    description: '深色背景，讓思緒在夜晚更清晰。',
-    price: 300,
-    category: 'theme',
-    previewColor: '#0f172a'
-  },
-  
-  // --- Avatars ---
-  {
-    id: 'frame-gold',
-    name: '金榜題名框',
-    description: '閃耀著金色光芒的頭像外框。',
+    type: 'theme',
+    name: '暗夜模式',
+    description: '深色主題，保護眼睛，專注閱讀。',
     price: 500,
-    category: 'avatar'
+    iconName: 'Palette',
+    isSystem: true,
+    allowMultiple: false
   },
   {
-    id: 'avatar-libai',
-    name: '李白套裝',
-    description: '解鎖詩仙李白的預設頭像。',
-    price: 800,
-    category: 'avatar'
+    id: 'theme-sepia',
+    type: 'theme',
+    name: '羊皮紙模式',
+    description: '復古風格，彷彿置身古代書齋。',
+    price: 300,
+    iconName: 'Palette',
+    isSystem: true,
+    allowMultiple: false
   },
-
-  // --- 🔥 實體道具 (Consumables) ---
   {
-    id: 'item-death-medal',
-    name: '免死金牌',
-    description: '在測驗中答錯一題可不扣分（僅限選擇題）。',
+    id: 'avatar-frame-gold',
+    type: 'avatar',
+    name: '黃金桂冠框',
+    description: '象徵最高榮譽的頭像外框。',
     price: 1000,
-    category: 'consumable'
+    iconName: 'User',
+    isSystem: true,
+    allowMultiple: false
   },
   {
-    id: 'item-ration',
-    name: '戰鬥口糧',
-    description: '恢復連續登入天數 (Streak) 1 天。',
-    price: 600,
-    category: 'consumable'
+    id: 'avatar-frame-leaves',
+    type: 'avatar',
+    name: '文青竹葉框',
+    description: '淡泊名利，寧靜致遠。',
+    price: 200,
+    iconName: 'User',
+    isSystem: true,
+    allowMultiple: false
   }
 ];
+
+// 用於 UI 顯示的 Icon 對照表
+export const ICON_MAP: Record<string, any> = {
+    Palette, User, Coffee, Ticket, Star
+};

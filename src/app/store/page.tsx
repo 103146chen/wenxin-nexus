@@ -2,146 +2,241 @@
 
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useUserStore } from "@/store/user-store";
-import { STORE_ITEMS } from "@/lib/data/store-items";
-import { useState } from "react";
-import { ShoppingCart, Check, Coins, Layout, User, Package } from "lucide-react";
+import { useTeacherStore } from "@/store/teacher-store"; // 需要用來查導師 ID
+import { StoreEngine } from "@/lib/engines/StoreEngine";
+import { StoreItem, ICON_MAP } from "@/lib/data/store-items"; // 🔥 修正 Import
+import { useState, useEffect } from "react";
+import { ShoppingCart, Check, Coins, Layout, User, Package, Ticket, Clock, AlertCircle } from "lucide-react";
 
 export default function StorePage() {
-  const { coins, inventory, activeTheme, activeFrame, buyItem, equipItem } = useUserStore();
-  const [activeTab, setActiveTab] = useState<'theme' | 'avatar' | 'consumable'>('theme');
+  const { 
+    coins, 
+    inventory, 
+    buyItem, 
+    useItem: consumeItem, // UserStore 的扣除數量邏輯
+    activeTheme, 
+    activeFrame, 
+    equipItem, 
+    id: studentId, 
+    name: studentName, 
+    classId 
+  } = useUserStore();
 
-  const items = STORE_ITEMS.filter(item => item.category === activeTab);
+  const { classes } = useTeacherStore();
 
-  const handleBuy = (item: typeof STORE_ITEMS[0]) => {
-      if (buyItem(item.id, item.price)) {
-          alert(`🎉 購買成功！已將 ${item.name} 加入背包。`);
-      } else {
-          alert("❌ 文心幣不足，快去完成任務賺錢吧！");
+  const [activeTab, setActiveTab] = useState<'buy' | 'inventory'>('buy');
+  const [storeItems, setStoreItems] = useState<StoreItem[]>([]);
+  const [teacherName, setTeacherName] = useState('');
+
+  // 🔥 載入混合商店資料
+  useEffect(() => {
+      if (classId) {
+          const myClass = classes.find(c => c.id === classId);
+          if (myClass && myClass.ownerId) {
+              const items = StoreEngine.getStudentStore(myClass.ownerId);
+              setStoreItems(items);
+              
+              // 取得老師名字 (簡單模擬)
+              setTeacherName(myClass.ownerId === 't-001' ? '孔子' : '孟子');
+          } else {
+              // 沒班級或沒導師，只顯示系統商品
+              setStoreItems(StoreEngine.getStudentStore());
+          }
       }
+  }, [classId, classes]);
+
+  const handleBuy = (item: StoreItem) => {
+    if (coins < item.price) {
+      alert("文心幣不足！快去完成閱讀任務吧。");
+      return;
+    }
+    
+    // 1. 扣庫存 (StoreEngine)
+    const stockSuccess = StoreEngine.purchase(studentId, item.id, item.price);
+    if (!stockSuccess) {
+        alert("來晚一步，商品已售完！");
+        return;
+    }
+
+    // 2. 扣錢與入庫 (UserStore)
+    const success = buyItem(item.id, item.price);
+    if (success) {
+      alert(`🎉 購買成功！\n已獲得：${item.name}`);
+      // Refresh items to update stock display
+      const myClass = classes.find(c => c.id === classId);
+      if (myClass?.ownerId) {
+          setStoreItems(StoreEngine.getStudentStore(myClass.ownerId));
+      }
+    }
   };
 
-  const handleEquip = (item: typeof STORE_ITEMS[0]) => {
-      if (item.category === 'consumable') return; // 消耗品無法裝備，只能持有
-      // @ts-ignore
-      equipItem(item.id, item.category);
+  const handleUse = (item: StoreItem) => {
+      // 1. 檢查是否需要核銷
+      const myClass = classes.find(c => c.id === classId);
+      const teacherId = myClass?.ownerId || 't-001';
+
+      const result = StoreEngine.useItem(studentId, studentName, classId || '', item, teacherId);
+
+      if (result === 'equipped') {
+          // 系統道具：直接裝備
+          equipItem(item.id, item.type as any);
+          alert(`✨ 已套用：${item.name}`);
+      } else {
+          // 實體獎勵：扣除數量並發送請求
+          consumeItem(item.id);
+          alert(`📨 已發送兌換請求！\n請等待 ${teacherName} 老師核銷後領取獎勵。`);
+      }
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
-      <div className="ml-64 flex-1 p-12">
-        <header className="mb-10 flex justify-between items-end">
-          <div>
-            <h1 className="text-4xl font-bold font-serif text-slate-900 mb-4">文心福利社</h1>
-            <p className="text-lg text-slate-600">
-                用學習成果兌換專屬獎勵，打造你的個人風格。
-            </p>
-          </div>
-          <div className="bg-yellow-100 text-yellow-700 px-6 py-3 rounded-2xl font-bold flex items-center gap-2 border-2 border-yellow-200">
-              <Coins className="w-6 h-6 fill-current"/>
-              <span className="text-2xl">{coins}</span> 文心幣
-          </div>
-        </header>
+      <div className="ml-64 flex-1 p-10">
+        
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8">
+            <div>
+                <h1 className="text-3xl font-bold text-slate-900 mb-2">福利社</h1>
+                <p className="text-slate-600">
+                    揮灑汗水賺取的文心幣，在這裡犒賞自己。
+                    {teacherName && <span className="ml-2 text-indigo-600 font-bold">({teacherName}老師的班級)</span>}
+                </p>
+            </div>
+            <div className="bg-white px-6 py-3 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-3">
+                <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600">
+                    <Coins className="w-6 h-6" />
+                </div>
+                <div>
+                    <div className="text-xs text-slate-400 font-bold uppercase">持有餘額</div>
+                    <div className="text-2xl font-bold text-slate-800">{coins}</div>
+                </div>
+            </div>
+        </div>
 
         {/* Tabs */}
-        <div className="flex gap-4 mb-8">
+        <div className="flex gap-4 mb-8 border-b border-slate-200">
             <button 
-                onClick={() => setActiveTab('theme')}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition ${activeTab === 'theme' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                onClick={() => setActiveTab('buy')}
+                className={`px-6 py-3 font-bold text-sm transition border-b-2 ${activeTab === 'buy' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
-                <Layout className="w-5 h-5" /> 介面主題
+                商品列表
             </button>
             <button 
-                onClick={() => setActiveTab('avatar')}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition ${activeTab === 'avatar' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                onClick={() => setActiveTab('inventory')}
+                className={`px-6 py-3 font-bold text-sm transition border-b-2 ${activeTab === 'inventory' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
-                <User className="w-5 h-5" /> 頭像風格
-            </button>
-            <button 
-                onClick={() => setActiveTab('consumable')}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition ${activeTab === 'consumable' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
-            >
-                <Package className="w-5 h-5" /> 實體道具
+                我的背包 ({inventory.reduce((acc, i) => acc + i.count, 0)})
             </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {items.map(item => {
-                const inventoryItem = inventory.find(i => i.itemId === item.id);
-                const isOwned = !!inventoryItem;
-                const isEquipped = item.category === 'theme' ? activeTheme === item.id : activeFrame === item.id;
-                
-                // 消耗品顯示持有數量
-                const count = inventoryItem?.count || 0;
+        {/* Content */}
+        {activeTab === 'buy' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {storeItems.map((item) => {
+                    const Icon = ICON_MAP[item.iconName] || Package;
+                    const isSystem = item.isSystem;
+                    
+                    // 檢查是否已擁有 (針對不可重複購買的商品)
+                    const owned = inventory.some(i => i.itemId === item.id);
+                    const canBuy = item.allowMultiple || !owned;
+                    const hasStock = item.stock === undefined || item.stock > 0;
 
-                return (
-                    <div key={item.id} className={`bg-white rounded-2xl overflow-hidden border-2 transition-all hover:shadow-xl group ${isEquipped ? 'border-green-500 shadow-md' : 'border-slate-200 hover:border-indigo-200'}`}>
-                        {/* 預覽圖區域 */}
-                        <div className={`h-40 flex items-center justify-center relative ${
-                            item.category === 'theme' 
-                                ? (item.id === 'theme-sepia' ? 'bg-[#fdf6e3]' : item.id === 'theme-dark' ? 'bg-slate-900' : 'bg-slate-100')
-                                : 'bg-slate-50'
-                        }`}>
-                            {item.category === 'avatar' ? (
-                                <div className={`w-20 h-20 rounded-full bg-slate-200 border-4 border-white shadow-lg flex items-center justify-center text-3xl font-serif font-bold text-slate-400 ${item.id === 'frame-gold' ? 'ring-4 ring-yellow-400' : ''}`}>
-                                    李
-                                </div>
-                            ) : item.category === 'consumable' ? (
-                                <div className="text-6xl">{item.id === 'item-death-medal' ? '🏅' : '🍞'}</div>
-                            ) : (
-                                <div className="text-slate-400 font-mono text-xs opacity-50">Preview</div>
-                            )}
-                            
-                            {isEquipped && (
-                                <div className="absolute top-4 right-4 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                                    <Check className="w-3 h-3" /> 使用中
-                                </div>
-                            )}
-                            
-                            {item.category === 'consumable' && isOwned && (
-                                <div className="absolute top-4 right-4 bg-slate-800 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                                    持有: {count}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="p-6">
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <h3 className="font-bold text-slate-900 text-lg mb-1">{item.name}</h3>
-                                    <p className="text-sm text-slate-500 h-10 line-clamp-2">{item.description}</p>
-                                </div>
+                    return (
+                        <div key={item.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-300 transition group flex flex-col relative overflow-hidden">
+                            {/* 標籤 */}
+                            <div className={`absolute top-0 right-0 px-3 py-1 text-[10px] font-bold rounded-bl-xl ${isSystem ? 'bg-slate-100 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
+                                {isSystem ? '系統' : '班級限定'}
                             </div>
 
-                            <div className="mt-4">
-                                {isOwned && item.category !== 'consumable' ? (
-                                    isEquipped ? (
-                                        <button disabled className="w-full py-3 bg-slate-100 text-slate-400 rounded-xl font-bold cursor-not-allowed">
-                                            目前使用中
-                                        </button>
+                            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition transform group-hover:scale-110 ${isSystem ? 'bg-slate-50 text-slate-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                                <Icon className="w-8 h-8" />
+                            </div>
+                            
+                            <h3 className="font-bold text-slate-800 text-lg mb-1">{item.name}</h3>
+                            <p className="text-xs text-slate-500 mb-4 flex-1 leading-relaxed">{item.description}</p>
+                            
+                            {item.stock !== undefined && (
+                                <div className="text-[10px] font-bold text-slate-400 mb-2">
+                                    剩餘庫存: <span className={item.stock < 5 ? 'text-red-500' : 'text-slate-600'}>{item.stock}</span>
+                                </div>
+                            )}
+
+                            <button 
+                                onClick={() => handleBuy(item)}
+                                disabled={!canBuy || !hasStock}
+                                className={`w-full py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition ${
+                                    !canBuy 
+                                    ? 'bg-green-50 text-green-600 cursor-default'
+                                    : !hasStock
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-lg shadow-slate-200'
+                                }`}
+                            >
+                                {!canBuy ? (
+                                    <><Check className="w-4 h-4"/> 已擁有</>
+                                ) : !hasStock ? (
+                                    '已售完'
+                                ) : (
+                                    <><Coins className="w-4 h-4 text-yellow-400"/> ${item.price}</>
+                                )}
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {inventory.length === 0 ? (
+                    <div className="col-span-full py-20 text-center text-slate-400">
+                        <Package className="w-16 h-16 mx-auto mb-4 opacity-20"/>
+                        <p>背包空空如也，去買點東西吧！</p>
+                    </div>
+                ) : (
+                    inventory.map((slot) => {
+                        // 因為 inventory 只存 ID，我們需要從 storeItems 找回完整資訊
+                        // 注意：如果老師刪除了商品，這裡可能會找不到，要防呆
+                        const item = storeItems.find(i => i.id === slot.itemId) || {
+                            id: slot.itemId,
+                            name: '未知物品',
+                            description: '此物品可能已下架',
+                            type: 'item',
+                            iconName: 'Package',
+                            isSystem: true
+                        } as StoreItem;
+
+                        const Icon = ICON_MAP[item.iconName] || Package;
+                        const isEquipped = activeTheme === item.id || activeFrame === item.id;
+
+                        return (
+                            <div key={slot.itemId} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                                <div className="w-14 h-14 bg-slate-50 rounded-xl flex items-center justify-center shrink-0 text-slate-500">
+                                    <Icon className="w-7 h-7" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <h4 className="font-bold text-slate-800 truncate">{item.name}</h4>
+                                        <span className="text-xs font-bold bg-slate-100 px-2 py-0.5 rounded-full">x{slot.count}</span>
+                                    </div>
+                                    
+                                    {isEquipped ? (
+                                        <span className="text-xs font-bold text-green-600 flex items-center gap-1">
+                                            <Check className="w-3 h-3"/> 使用中
+                                        </span>
                                     ) : (
                                         <button 
-                                            onClick={() => handleEquip(item)}
-                                            className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition"
+                                            onClick={() => handleUse(item)}
+                                            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
                                         >
-                                            立即裝備
+                                            {item.isSystem ? '立即裝備' : '使用兌換'}
                                         </button>
-                                    )
-                                ) : (
-                                    <button 
-                                        onClick={() => handleBuy(item)}
-                                        className="w-full py-3 bg-yellow-400 text-yellow-900 rounded-xl font-bold hover:bg-yellow-500 transition flex items-center justify-center gap-2 shadow-sm"
-                                    >
-                                        <ShoppingCart className="w-4 h-4" />
-                                        {item.price} 文心幣
-                                    </button>
-                                )}
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
+                        );
+                    })
+                )}
+            </div>
+        )}
       </div>
     </div>
   );
