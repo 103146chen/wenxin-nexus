@@ -20,15 +20,11 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
   const router = useRouter();
   const { name, unlockedSkills, activateSkill, addXp, addCoins, quizRecords, updateQuizRecord, correctMistake } = useUserStore();
   
-  // 用於觸發重新讀取資料 (例如提交後)
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // 🔥 1. 計算目前的模式與題目列表
   const calculateSession = useCallback(() => {
-    // 取得最新資產 (同步讀取 LocalStorage)
     const myAssets = GamificationEngine.getMyAssets(name);
 
-    // A. 題目扁平化
     const flatQuestions: PlayableQuestion[] = [];
     lesson.quizzes.forEach(q => {
       if (q.type === 'group') {
@@ -40,11 +36,8 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       }
     });
 
-    // B. 從 Store 獲取選擇題紀錄
     const record = useUserStore.getState().quizRecords[lesson.id];
 
-    // C. 檢查是否有「被退回」的簡答題
-    // 我們使用穩定的 ID 規則: `${lesson.id}-${q.id}-${name}` 來查找
     const rejectedShortQs = flatQuestions.filter(q => {
         if (q.type !== 'short') return false;
         const assetId = `${lesson.id}-${q.id}-${name}`;
@@ -52,35 +45,28 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
         return asset?.status === 'rejected';
     });
 
-    // 🔥 修改重點：如果有被退回的簡答題，強制進入「簡答訂正模式」
-    // 在這個模式下，只顯示被退回的題目，忽略其他錯題
     if (rejectedShortQs.length > 0) {
         return { mode: 'correction' as QuizMode, questions: rejectedShortQs };
     }
 
-    // 情境 1: 沒紀錄(第一次做) -> Normal
     if (!record || !record.isFinished) {
         return { mode: 'normal' as QuizMode, questions: flatQuestions };
     }
 
-    // 情境 2: 有錯題 (選擇題錯) -> Correction
     if (record.wrongQuestionIds.length > 0) {
         const wrongQs = flatQuestions.filter(q => record.wrongQuestionIds.includes(q.id));
         return { mode: 'correction' as QuizMode, questions: wrongQs };
     }
 
-    // 情境 3: 全部通過 -> Review
     return { mode: 'review' as QuizMode, questions: flatQuestions };
   }, [lesson, quizRecords, name, refreshKey]);
 
-  // 初始化狀態
   const [session, setSession] = useState<{ mode: QuizMode; questions: PlayableQuestion[] } | null>(null);
 
   useEffect(() => {
       setSession(calculateSession());
   }, [calculateSession]);
 
-  // 狀態管理
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [shortAnswerText, setShortAnswerText] = useState("");
@@ -94,18 +80,15 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
   const [removedOptions, setRemovedOptions] = useState<number[]>([]);
   const [showHint, setShowHint] = useState(false);
 
-  // 取得當前題目
   const currentQuestion = session?.questions[currentQIndex];
   const totalQuestions = session?.questions.length || 0;
 
-  // 🔥 取得當前簡答題的 Asset (即時狀態)
   const currentAsset: StudentAsset | undefined = useMemo(() => {
       if (!currentQuestion || currentQuestion.type !== 'short') return undefined;
       const myAssets = GamificationEngine.getMyAssets(name);
       return myAssets.find(a => a.id === `${lesson.id}-${currentQuestion.id}-${name}`);
   }, [currentQuestion, name, lesson.id, refreshKey]);
 
-  // 切換題目時重置狀態
   useEffect(() => {
       setSelectedIndices([]);
       setIsAnswered(false);
@@ -113,7 +96,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       setRemovedOptions([]);
       setShowHint(false);
 
-      // 如果是簡答題，預先填入之前的答案 (方便修改)
       if (currentQuestion?.type === 'short' && currentAsset) {
           setShortAnswerText(currentAsset.contentPreview || "");
       } else {
@@ -122,7 +104,7 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
   }, [currentQIndex, session, currentAsset, currentQuestion]);
 
   const handleRestart = () => {
-      setRefreshKey(prev => prev + 1); // 強制重新計算 Session
+      setRefreshKey(prev => prev + 1);
       setCurrentQIndex(0);
       setScore(0);
       setWrongIds([]);
@@ -142,7 +124,11 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
   const handleSubmit = () => {
       if (!currentQuestion) return;
 
-      if (isAnswered) {
+      // 🔥 修正：檢查簡答題是否已提交 (已送出或已通過)
+      const isShortAnswerSubmitted = currentQuestion.type === 'short' && (currentAsset?.status === 'pending' || currentAsset?.status === 'verified');
+
+      // 🔥 修正：若已回答或簡答已提交，直接跳下一題
+      if (isAnswered || isShortAnswerSubmitted) {
           handleNext();
           return;
       }
@@ -159,7 +145,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
           correct = ans === user;
       }
       else if (currentQuestion.type === 'short') {
-          // 🔥 提交簡答題 (使用穩定 ID)
           GamificationEngine.submitAsset({
               id: `${lesson.id}-${currentQuestion.id}-${name}`,
               type: 'quiz-short',
@@ -168,16 +153,15 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
               authorId: name,
               authorName: name
           });
-          correct = true; // 提交即算完成當下步驟
+          correct = true; 
           alert("已提交簡答給老師批閱！");
-          setRefreshKey(k => k + 1); // 觸發畫面更新
+          setRefreshKey(k => k + 1); 
       }
 
       setIsCorrect(correct);
 
       if (correct) {
           if (session?.mode === 'correction') {
-              // 只有選擇題在當下能確定答對並給獎勵，簡答題需等老師
               if (currentQuestion.type !== 'short') {
                   addCoins(5);
                   addXp(10);
@@ -212,7 +196,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
     }
   };
 
-  // 技能
   const handleUseZap = () => {
     if (isAnswered || currentQuestion?.type !== 'single') return;
     if (!activateSkill('quiz-1', 12)) { alert("技能冷卻中！"); return; }
@@ -230,10 +213,8 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
 
   if (!session || !currentQuestion) return <div className="p-12 text-center text-slate-500"><Loader2 className="w-8 h-8 animate-spin mx-auto"/> 載入題庫中...</div>;
 
-  // --- 結算畫面 ---
   if (isFinished) {
       const currentRecord = useUserStore.getState().quizRecords[lesson.id];
-      // 檢查是否還有錯題 (包含被退回的簡答)
       const myAssets = GamificationEngine.getMyAssets(name);
       const hasRejectedShorts = lesson.quizzes.some(q => {
           if (q.type !== 'short') return false;
@@ -302,7 +283,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       );
   }
 
-  // --- 測驗進行中 ---
   return (
     <div className="flex min-h-screen bg-slate-50">
       <div className="flex-1 p-8 flex flex-col h-screen">
@@ -337,7 +317,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                 </h2>
 
                 <div className="space-y-3">
-                    {/* 選擇題渲染 */}
                     {(currentQuestion.type === 'single' || currentQuestion.type === 'multiple') && 
                       currentQuestion.options.map((opt, idx) => {
                         const isRemoved = removedOptions.includes(idx);
@@ -362,11 +341,9 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                         );
                     })}
 
-                    {/* 🔥 簡答題渲染：加入狀態回饋與訂正邏輯 */}
                     {currentQuestion.type === 'short' && (
                         <div className="space-y-4">
                             
-                            {/* 退回狀態：顯示評語 */}
                             {currentAsset?.status === 'rejected' && (
                                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-800 animate-in slide-in-from-top-2">
                                     <div className="flex items-center gap-2 font-bold mb-1"><AlertCircle className="w-4 h-4"/> 老師的回饋：</div>
@@ -375,7 +352,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                                 </div>
                             )}
 
-                            {/* 待批改或通過：鎖定狀態 */}
                             {(currentAsset?.status === 'pending' || currentAsset?.status === 'verified') && (
                                 <div className={`p-3 rounded-lg border flex items-center gap-2 text-sm font-bold ${
                                     currentAsset.status === 'verified' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-yellow-50 border-yellow-200 text-yellow-700'
@@ -396,7 +372,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                     )}
                 </div>
 
-                {/* 選擇題的提示 / 詳解 */}
                 {(showHint || (session.mode === 'correction' && !isCorrect && isAnswered && currentQuestion.type !== 'short')) && (
                     <div className="mt-6 p-4 bg-amber-50 text-amber-900 rounded-xl text-sm border border-amber-100 animate-in fade-in slide-in-from-top-2">
                         <div className="font-bold flex items-center gap-2 mb-1"><HelpCircle className="w-4 h-4" /> {session.mode === 'correction' ? '思考導引' : '詳解提示'}</div>
@@ -417,11 +392,9 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
 
                 <button 
                     onClick={handleSubmit}
-                    // 當簡答題被鎖定時 (pending/verified)，按鈕變成 "下一題" 功能
                     disabled={(!isAnswered && selectedIndices.length === 0 && !shortAnswerText) && !(currentQuestion.type === 'short' && (currentAsset?.status === 'pending' || currentAsset?.status === 'verified'))}
                     className="px-8 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-indigo-600 transition shadow-lg animate-in fade-in slide-in-from-right-5 flex items-center gap-2"
                 >
-                    {/* 按鈕文字邏輯 */}
                     {isAnswered || (currentQuestion.type === 'short' && (currentAsset?.status === 'pending' || currentAsset?.status === 'verified'))
                         ? (currentQIndex < totalQuestions - 1 ? '下一題' : (session.mode === 'correction' ? '完成訂正' : '查看結果')) 
                         : (currentQuestion.type === 'short' ? (currentAsset?.status === 'rejected' ? '重新提交' : '提交簡答') : '確認答案')

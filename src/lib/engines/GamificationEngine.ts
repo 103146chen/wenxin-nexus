@@ -19,7 +19,8 @@ const saveAssets = (assets: StudentAsset[]) => {
 export const GamificationEngine = {
   
   // 1. 學生提交資產
-  submitAsset: (asset: Omit<StudentAsset, 'status' | 'likes' | 'stickers' | 'createdAt' | 'likedBy'>) => {
+  // 🔥 修正：Omit 加入 'votes' | 'votedBy'，避免前端報錯
+  submitAsset: (asset: Omit<StudentAsset, 'status' | 'likes' | 'stickers' | 'createdAt' | 'likedBy' | 'votes' | 'votedBy'>) => {
     const assets = loadAssets();
     const existingIndex = assets.findIndex(a => a.id === asset.id);
     
@@ -28,14 +29,22 @@ export const GamificationEngine = {
       status: 'pending',
       likes: 0,
       likedBy: [],
+      // 🔥 修正：初始化投票欄位
+      votes: 0,
+      votedBy: [],
       stickers: { insightful: 0, logical: 0, creative: 0 },
       createdAt: new Date().toISOString(),
     };
 
     if (existingIndex >= 0) {
       const oldAsset = assets[existingIndex];
+      // 保留舊的互動數據
       newAsset.likes = oldAsset.likes;
       newAsset.likedBy = oldAsset.likedBy || [];
+      // 🔥 修正：保留舊的投票數據
+      newAsset.votes = oldAsset.votes || 0;
+      newAsset.votedBy = oldAsset.votedBy || [];
+      
       assets[existingIndex] = newAsset;
     } else {
       assets.push(newAsset);
@@ -112,7 +121,7 @@ export const GamificationEngine = {
     return assets;
   },
 
-  // 🔥 7. 補回：取得特定使用者的資產 (同步用)
+  // 7. 取得特定使用者的資產 (同步用)
   getMyAssets: (authorId: string) => {
     return loadAssets().filter(a => a.authorId === authorId);
   }
