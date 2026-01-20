@@ -1,5 +1,5 @@
 import { ClassRoom, LessonProgress, StudentSummary } from "@/lib/types/class-management";
-import { ALL_LESSONS, getAllQuestions } from "./lessons"; // 🔥 引入 getAllQuestions
+import { ALL_LESSONS, getAllQuestions } from "./lessons";
 
 // 隨機生成學生名單
 const NAMES = [
@@ -8,14 +8,20 @@ const NAMES = [
   "范仲淹", "王安石", "司馬光", "周敦頤", "朱熹"
 ];
 
-// 生成隨機進度
-const generateProgress = (lessonId: string): LessonProgress => {
+// 🔥 新增：偽隨機函式 (Deterministic Random)
+// 只要輸入相同的 seed，就會產生相同的 0~1 小數
+const seededRandom = (seed: number) => {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+};
+
+// 生成隨機進度 (使用 seed 確保一致性)
+const generateProgress = (lessonId: string, seed: number): LessonProgress => {
   const lesson = ALL_LESSONS.find(l => l.id === lessonId);
-  // 🔥 修正：使用 Helper 取得所有題目，避免存取不存在的 .quizzes
   const allQuestions = lesson ? getAllQuestions(lesson) : [];
   const quizIds = allQuestions.map(q => q.id);
   
-  const rand = Math.random();
+  const rand = seededRandom(seed); // 使用偽隨機
   
   // 30% 未開始
   if (rand < 0.3) {
@@ -34,20 +40,19 @@ const generateProgress = (lessonId: string): LessonProgress => {
     return {
       lessonId,
       status: 'in-progress',
-      quizScore: Math.floor(Math.random() * 3), // 0-2 分
+      quizScore: Math.floor(seededRandom(seed + 1) * 3), // 0-2 分
       quizWrongIds: quizIds.slice(0, 2), // 隨機錯題
-      hasReflection: Math.random() > 0.5,
+      hasReflection: seededRandom(seed + 2) > 0.5,
       hasLogicMap: false,
       logicMapStatus: 'pending',
-      annotationCount: Math.floor(Math.random() * 5)
+      annotationCount: Math.floor(seededRandom(seed + 3) * 5)
     };
   }
 
   // 50% 已完成
-  const score = Math.floor(Math.random() * 3) + 3; // 3-5 分
-  // 隨機產生錯題 ID
+  const score = Math.floor(seededRandom(seed + 4) * 3) + 3; // 3-5 分
   const wrongCount = 5 - score;
-  const wrongIds = quizIds.sort(() => 0.5 - Math.random()).slice(0, wrongCount);
+  const wrongIds = quizIds.slice(0, wrongCount); // 簡化錯題選取以保持穩定
 
   return {
     lessonId,
@@ -56,8 +61,8 @@ const generateProgress = (lessonId: string): LessonProgress => {
     quizWrongIds: wrongIds,
     hasReflection: true,
     hasLogicMap: true,
-    logicMapStatus: Math.random() > 0.8 ? 'verified' : 'pending',
-    annotationCount: Math.floor(Math.random() * 10) + 5
+    logicMapStatus: seededRandom(seed + 5) > 0.8 ? 'verified' : 'pending',
+    annotationCount: Math.floor(seededRandom(seed + 6) * 10) + 5
   };
 };
 
@@ -67,14 +72,15 @@ export const MOCK_CLASSES: ClassRoom[] = [
     name: '高一仁班',
     code: 'WEN-101',
     semester: '113-1',
-    ownerId: 't-001', // 預設導師 ID
+    ownerId: 't-001',
     students: NAMES.map((name, idx) => ({
       id: `s-${idx}`,
       name,
       avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${idx}`,
-      level: Math.floor(Math.random() * 10) + 1,
-      xp: Math.floor(Math.random() * 5000),
-      streak: Math.floor(Math.random() * 30)
+      // 🔥 修正：使用 idx 作為種子，確保數值固定
+      level: Math.floor(seededRandom(idx * 100) * 10) + 1,
+      xp: Math.floor(seededRandom(idx * 200) * 5000),
+      streak: Math.floor(seededRandom(idx * 300) * 30)
     })),
     progressMatrix: {}
   },
@@ -88,20 +94,22 @@ export const MOCK_CLASSES: ClassRoom[] = [
       id: `s2-${idx}`,
       name: name + " (愛)",
       avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=love-${idx}`,
-      level: Math.floor(Math.random() * 5) + 1,
-      xp: Math.floor(Math.random() * 2000),
-      streak: Math.floor(Math.random() * 10)
+      level: Math.floor(seededRandom(idx * 400) * 5) + 1,
+      xp: Math.floor(seededRandom(idx * 500) * 2000),
+      streak: Math.floor(seededRandom(idx * 600) * 10)
     })),
     progressMatrix: {}
   }
 ];
 
 // 初始化 Progress Matrix
-MOCK_CLASSES.forEach(cls => {
-  cls.students.forEach(student => {
+MOCK_CLASSES.forEach((cls, clsIdx) => {
+  cls.students.forEach((student, stuIdx) => {
     cls.progressMatrix[student.id] = {};
-    ALL_LESSONS.forEach(lesson => {
-      cls.progressMatrix[student.id][lesson.id] = generateProgress(lesson.id);
+    ALL_LESSONS.forEach((lesson, lessonIdx) => {
+      // 組合唯一的種子
+      const seed = clsIdx * 10000 + stuIdx * 100 + lessonIdx;
+      cls.progressMatrix[student.id][lesson.id] = generateProgress(lesson.id, seed);
     });
   });
 });

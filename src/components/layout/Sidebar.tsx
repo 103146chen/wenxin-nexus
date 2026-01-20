@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation"; // 🔥 加入 useRouter
 import { useUserStore } from "@/store/user-store";
 import { 
   BookOpen, 
@@ -10,7 +10,6 @@ import {
   Store, 
   LogOut, 
   UserCircle,
-  Trophy,
   GalleryVerticalEnd,
   CheckCircle,
   Library
@@ -20,6 +19,7 @@ import { useEffect } from "react";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter(); // 🔥 初始化 router
   const { role, logout, checkAndClaimRewards } = useUserStore();
 
   useEffect(() => {
@@ -35,9 +35,14 @@ export function Sidebar() {
       }
   }, [role, pathname, checkAndClaimRewards]);
 
+  // 🔥 新增：登出處理函式
+  const handleLogout = () => {
+      logout();
+      router.push('/login'); // 強制跳轉回登入頁
+  };
+
   const navItems = role === 'teacher' ? [
     { name: '指揮中心', href: '/dashboard', icon: LayoutDashboard },
-    // 🔥 修改：指向列表頁，圖示改為 Library
     { name: '課程管理', href: '/teacher/lessons', icon: Library }, 
     { name: '作業批閱', href: '/teacher/verification', icon: CheckCircle }, 
   ] : [
@@ -63,7 +68,6 @@ export function Sidebar() {
 
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {navItems.map((item) => {
-          // 讓 /teacher/lessons/new 也能點亮 /teacher/lessons
           const isActive = pathname.startsWith(item.href);
           return (
             <Link 
@@ -97,8 +101,9 @@ export function Sidebar() {
             </div>
         )}
         
+        {/* 🔥 修改：綁定 handleLogout */}
         <button 
-            onClick={logout}
+            onClick={handleLogout}
             className="w-full mt-4 flex items-center justify-center gap-2 text-xs text-slate-500 hover:text-rose-400 transition py-2"
         >
             <LogOut className="w-3 h-3" /> 登出切換身分
