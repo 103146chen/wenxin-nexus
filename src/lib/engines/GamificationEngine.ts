@@ -3,14 +3,12 @@ import { StudentAsset } from '@/lib/types/gamification';
 
 const ASSETS_STORAGE_KEY = 'wenxin-assets-repository';
 
-// 輔助函數：讀取資料
 const loadAssets = (): StudentAsset[] => {
   if (typeof window === 'undefined') return [];
   const data = localStorage.getItem(ASSETS_STORAGE_KEY);
   return data ? JSON.parse(data) : [];
 };
 
-// 輔助函數：寫入資料
 const saveAssets = (assets: StudentAsset[]) => {
   if (typeof window === 'undefined') return;
   localStorage.setItem(ASSETS_STORAGE_KEY, JSON.stringify(assets));
@@ -19,8 +17,8 @@ const saveAssets = (assets: StudentAsset[]) => {
 export const GamificationEngine = {
   
   // 1. 學生提交資產
-  // 🔥 修正：Omit 加入 'votes' | 'votedBy'，避免前端報錯
-  submitAsset: (asset: Omit<StudentAsset, 'status' | 'likes' | 'stickers' | 'createdAt' | 'likedBy' | 'votes' | 'votedBy'>) => {
+  // 🔥 修正：Omit 列表中必須加入 'votes' | 'votedBy'，否則前端呼叫時會報錯
+  submitAsset: (asset: Omit<StudentAsset, 'status' | 'likes' | 'stickers' | 'createdAt' | 'likedBy' | 'votes' | 'votedBy' | 'isRewardClaimed'>) => {
     const assets = loadAssets();
     const existingIndex = assets.findIndex(a => a.id === asset.id);
     
@@ -29,11 +27,12 @@ export const GamificationEngine = {
       status: 'pending',
       likes: 0,
       likedBy: [],
-      // 🔥 修正：初始化投票欄位
+      // 🔥 修正：初始化投票相關欄位
       votes: 0,
       votedBy: [],
       stickers: { insightful: 0, logical: 0, creative: 0 },
       createdAt: new Date().toISOString(),
+      isRewardClaimed: false
     };
 
     if (existingIndex >= 0) {
@@ -41,7 +40,6 @@ export const GamificationEngine = {
       // 保留舊的互動數據
       newAsset.likes = oldAsset.likes;
       newAsset.likedBy = oldAsset.likedBy || [];
-      // 🔥 修正：保留舊的投票數據
       newAsset.votes = oldAsset.votes || 0;
       newAsset.votedBy = oldAsset.votedBy || [];
       
@@ -63,8 +61,8 @@ export const GamificationEngine = {
     if (asset && asset.status === 'pending') {
       if (action === 'verify') {
         asset.status = 'verified';
-        useUserStore.getState().addXp(200);
-        useUserStore.getState().addCoins(50);
+        // 注意：老師核可時的獎勵現在改由 user-store 的 checkAndClaimRewards 統一發放，這裡只給少量即時回饋或移除
+        // useUserStore.getState().addXp(200); 
       } else {
         asset.status = 'rejected';
         asset.feedback = feedback || '請再檢查一下內容喔！';
@@ -98,13 +96,13 @@ export const GamificationEngine = {
     return 0;
   },
 
-  // 4. 取得畫廊資產 (已認證 + 非註釋)
+  // 4. 取得畫廊資產
   getGalleryAssets: () => {
     const assets = loadAssets();
     return assets.filter(a => a.status === 'verified' && a.type !== 'annotation');
   },
   
-  // 5. 取得特定詞彙的社群註釋 (已認證 + 是註釋 + 同一個詞)
+  // 5. 社群註釋
   getCommunityAnnotations: (targetText: string) => {
     const assets = loadAssets();
     return assets.filter(a => 
@@ -114,14 +112,14 @@ export const GamificationEngine = {
     );
   },
 
-  // 6. 取得所有資產 (老師後台用)
+  // 6. 取得所有資產
   getAllAssets: (filterStatus?: string) => {
     const assets = loadAssets();
     if (filterStatus) return assets.filter(a => a.status === filterStatus);
     return assets;
   },
 
-  // 7. 取得特定使用者的資產 (同步用)
+  // 7. 取得特定使用者的資產
   getMyAssets: (authorId: string) => {
     return loadAssets().filter(a => a.authorId === authorId);
   }

@@ -10,10 +10,10 @@ interface AssetCardProps {
 }
 
 export default function AssetCard({ asset, currentUserId, onLike, onVote, onClick }: AssetCardProps) {
-  // 🔥 防呆 1：如果 asset 本身是 undefined，直接不渲染
+  // 🔥 防呆 1：如果 asset 資料損毀，直接不渲染，防止整個頁面崩潰
   if (!asset) return null;
 
-  // 🔥 防呆 2：處理舊資料可能缺少的陣列欄位
+  // 🔥 防呆 2：給予預設值，防止舊資料缺少陣列欄位
   const likedBy = asset.likedBy || [];
   const votedBy = asset.votedBy || [];
   const likesCount = asset.likes || 0;
@@ -24,8 +24,6 @@ export default function AssetCard({ asset, currentUserId, onLike, onVote, onClic
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition group cursor-pointer flex flex-col h-full relative">
-      
-      {/* 縮圖區域 */}
       <div 
         className="h-40 bg-slate-100 relative overflow-hidden flex items-center justify-center"
         onClick={() => onClick(asset)}
@@ -40,7 +38,6 @@ export default function AssetCard({ asset, currentUserId, onLike, onVote, onClic
         </div>
       </div>
 
-      {/* 資訊區域 */}
       <div className="p-4 flex flex-col flex-1">
         <h3 className="font-bold text-slate-800 mb-1 line-clamp-1">{asset.title}</h3>
         
@@ -52,35 +49,27 @@ export default function AssetCard({ asset, currentUserId, onLike, onVote, onClic
         </div>
 
         <div className="mt-auto flex justify-between items-center border-t border-slate-100 pt-3 gap-2">
-            
-            {/* 按讚 (可取消) */}
             <button 
                 onClick={(e) => { e.stopPropagation(); onLike(asset.id); }}
                 className={`flex-1 flex items-center justify-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition ${
-                    isLiked 
-                    ? 'bg-rose-100 text-rose-600' 
-                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                    isLiked ? 'bg-rose-100 text-rose-600' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
                 }`}
             >
                 <Heart className={`w-3 h-3 ${isLiked ? 'fill-current' : ''}`} />
                 {likesCount}
             </button>
 
-            {/* 投票 (不可取消) */}
             <button 
                 onClick={(e) => { e.stopPropagation(); !isVoted && onVote(asset.id); }}
                 disabled={isVoted}
                 className={`flex-1 flex items-center justify-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition ${
-                    isVoted 
-                    ? 'bg-amber-100 text-amber-600 cursor-default' 
-                    : 'bg-slate-50 text-slate-500 hover:bg-amber-50 hover:text-amber-600'
+                    isVoted ? 'bg-amber-100 text-amber-600 cursor-default' : 'bg-slate-50 text-slate-500 hover:bg-amber-50 hover:text-amber-600'
                 }`}
                 title={isVoted ? "已投過票" : "投下神聖一票 (不可取消)"}
             >
                 <Star className={`w-3 h-3 ${isVoted ? 'fill-current' : ''}`} />
                 {votesCount}
             </button>
-
         </div>
       </div>
     </div>
