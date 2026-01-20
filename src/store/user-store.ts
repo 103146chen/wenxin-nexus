@@ -3,10 +3,8 @@ import { persist } from 'zustand/middleware';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 import { Annotation, StudentAsset } from '@/lib/types/gamification';
 
-// 定義角色型別
 export type UserRole = 'student' | 'teacher' | 'guest';
 
-// 定義測驗紀錄結構
 interface QuizRecord {
   lessonId: string;
   highestScore: number;
@@ -33,6 +31,9 @@ interface UserState {
   streakDays: number;
   lastLoginDate: string;
 
+  // 🔥 新增：記錄生涯已領取的票數 (用於計算增量獎勵)
+  lifetimeVotesClaimed: number;
+
   quizRecords: Record<string, QuizRecord>;
   annotations: Record<string, Annotation[]>;
   classId: string | null;
@@ -55,8 +56,11 @@ interface UserState {
   login: (role: UserRole, username?: string) => void;
   logout: () => void;
   
-  // 🔥 新增：按讚功能
   toggleLike: (assetId: string) => void;
+  
+  // 🔥 新增：投票與領獎
+  voteForAsset: (assetId: string) => boolean; // 回傳成功與否
+  checkAndClaimRewards: () => { verificationCount: number, voteCount: number, totalCoins: number, totalXp: number };
 }
 
 const calculateLevelFromXp = (xp: number) => Math.floor(0.1 * Math.sqrt(xp)) || 1;
@@ -86,6 +90,9 @@ export const useUserStore = create<UserState>()(
       activeFrame: 'default',
       streakDays: 12,
       lastLoginDate: new Date().toISOString().split('T')[0],
+      
+      lifetimeVotesClaimed: 0, // 初始化
+
       quizRecords: {},
       annotations: {}, 
       
@@ -254,7 +261,6 @@ export const useUserStore = create<UserState>()(
           set({ isLoggedIn: false, role: 'guest', classId: null, id: '' });
       },
 
-      // 🔥 實作 toggleLike
       toggleLike: (assetId) => {
           const { id } = get();
           if (typeof window === 'undefined') return;
@@ -266,8 +272,10 @@ export const useUserStore = create<UserState>()(
                   
                   if (targetIndex !== -1) {
                       const asset = assets[targetIndex];
-                      const hasLiked = asset.likedBy.includes(id);
+                      // 確保 likedBy 陣列存在
+                      if (!asset.likedBy) asset.likedBy = [];
                       
+                      const hasLiked = asset.likedBy.includes(id);
                       if (hasLiked) {
                           asset.likedBy = asset.likedBy.filter(uid => uid !== id);
                           asset.likes = Math.max(0, asset.likes - 1);
@@ -275,7 +283,6 @@ export const useUserStore = create<UserState>()(
                           asset.likedBy.push(id);
                           asset.likes += 1;
                       }
-                      
                       assets[targetIndex] = asset;
                       localStorage.setItem(ASSETS_STORAGE_KEY, JSON.stringify(assets));
                   }
@@ -283,6 +290,104 @@ export const useUserStore = create<UserState>()(
           } catch (e) {
               console.error(e);
           }
+      },
+
+      // 🔥 實作投票 (不可逆)
+      voteForAsset: (assetId) => {
+          const { id } = get();
+          if (typeof window === 'undefined') return false;
+          try {
+              const raw = localStorage.getItem(ASSETS_STORAGE_KEY);
+              if (raw) {
+                  const assets: StudentAsset[] = JSON.parse(raw);
+                  const targetIndex = assets.findIndex(a => a.id === assetId);
+                  
+                  if (targetIndex !== -1) {
+                      const asset = assets[targetIndex];
+                      // 確保 votedBy 存在
+                      if (!asset.votedBy) asset.votedBy = [];
+                      if (!asset.votes) asset.votes = 0;
+
+                      // 檢查是否已投過
+                      if (asset.votedBy.includes(id)) return false;
+
+                      // 執行投票
+                      asset.votedBy.push(id);
+                      asset.votes += 1;
+                      
+                      assets[targetIndex] = asset;
+                      localStorage.setItem(ASSETS_STORAGE_KEY, JSON.stringify(assets));
+                      return true;
+                  }
+              }
+          } catch (e) { console.error(e); }
+          return false;
+      },
+
+      // 🔥 實作雙重領獎機制
+      checkAndClaimRewards: () => {
+          const { id, addXp, addCoins, lifetimeVotesClaimed } = get();
+          if (typeof window === 'undefined') return { verificationCount: 0, voteCount: 0, totalCoins: 0, totalXp: 0 };
+
+          let totalRewardXp = 0;
+          let totalRewardCoins = 0;
+          let verificationCount = 0;
+          let currentTotalVotes = 0;
+
+          try {
+              const raw = localStorage.getItem(ASSETS_STORAGE_KEY);
+              if (raw) {
+                  const assets: StudentAsset[] = JSON.parse(raw);
+                  let hasUpdates = false;
+
+                  // 1. 檢查「教師核可」獎勵
+                  const myAssets = assets.filter(a => a.authorId === id);
+                  myAssets.forEach(asset => {
+                      if (asset.status === 'verified' && !asset.isRewardClaimed) {
+                          totalRewardXp += 500;
+                          totalRewardCoins += 100;
+                          asset.isRewardClaimed = true; // 標記為已領
+                          verificationCount++;
+                          hasUpdates = true;
+                      }
+                      // 統計我獲得的總票數
+                      currentTotalVotes += (asset.votes || 0);
+                  });
+
+                  // 2. 檢查「人氣投票」獎勵
+                  // 增量 = 現在總票數 - 生涯已領票數
+                  const newVotes = currentTotalVotes - lifetimeVotesClaimed;
+                  if (newVotes > 0) {
+                      // 假設 1 票 = 50 文心幣
+                      totalRewardCoins += (newVotes * 50);
+                      set({ lifetimeVotesClaimed: currentTotalVotes });
+                  }
+
+                  // 寫回 LocalStorage
+                  if (hasUpdates) {
+                      // 更新 assets 陣列中的我的資產狀態 (isRewardClaimed)
+                      // 注意：myAssets 是 reference 還是 copy 取決於 filter 實作，這裡我們直接 map 回去比較保險
+                      const updatedAssets = assets.map(a => {
+                          const myUpdated = myAssets.find(ma => ma.id === a.id);
+                          return myUpdated || a;
+                      });
+                      localStorage.setItem(ASSETS_STORAGE_KEY, JSON.stringify(updatedAssets));
+                  }
+                  
+                  // 發放
+                  if (totalRewardXp > 0) addXp(totalRewardXp);
+                  if (totalRewardCoins > 0) addCoins(totalRewardCoins);
+
+                  return { 
+                      verificationCount, 
+                      voteCount: Math.max(0, newVotes), 
+                      totalCoins: totalRewardCoins, 
+                      totalXp: totalRewardXp 
+                  };
+              }
+          } catch (e) { console.error(e); }
+          
+          return { verificationCount: 0, voteCount: 0, totalCoins: 0, totalXp: 0 };
       }
     }),
     { name: 'wenxin-user-storage' }

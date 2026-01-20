@@ -1,18 +1,30 @@
-import { Heart, Eye, GitGraph } from 'lucide-react';
+import { Heart, Eye, GitGraph, Star } from 'lucide-react';
 import { StudentAsset } from '@/lib/types/gamification';
 
 interface AssetCardProps {
   asset: StudentAsset;
   currentUserId: string;
   onLike: (id: string) => void;
+  onVote: (id: string) => void;
   onClick: (asset: StudentAsset) => void;
 }
 
-export default function AssetCard({ asset, currentUserId, onLike, onClick }: AssetCardProps) {
-  const isLiked = asset.likedBy.includes(currentUserId);
+export default function AssetCard({ asset, currentUserId, onLike, onVote, onClick }: AssetCardProps) {
+  // 🔥 防呆 1：如果 asset 本身是 undefined，直接不渲染
+  if (!asset) return null;
+
+  // 🔥 防呆 2：處理舊資料可能缺少的陣列欄位
+  const likedBy = asset.likedBy || [];
+  const votedBy = asset.votedBy || [];
+  const likesCount = asset.likes || 0;
+  const votesCount = asset.votes || 0;
+
+  const isLiked = likedBy.includes(currentUserId);
+  const isVoted = votedBy.includes(currentUserId);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition group cursor-pointer flex flex-col h-full">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition group cursor-pointer flex flex-col h-full relative">
+      
       {/* 縮圖區域 */}
       <div 
         className="h-40 bg-slate-100 relative overflow-hidden flex items-center justify-center"
@@ -34,26 +46,41 @@ export default function AssetCard({ asset, currentUserId, onLike, onClick }: Ass
         
         <div className="flex items-center gap-2 mb-4">
             <div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-[10px] font-bold text-indigo-600">
-                {asset.authorName[0]}
+                {asset.authorName ? asset.authorName[0] : '?'}
             </div>
-            <span className="text-xs text-slate-500">{asset.authorName}</span>
+            <span className="text-xs text-slate-500">{asset.authorName || '未知作者'}</span>
         </div>
 
-        <div className="mt-auto flex justify-between items-center border-t border-slate-100 pt-3">
-            <div className="text-[10px] text-slate-400">
-                {new Date(asset.createdAt).toLocaleDateString()}
-            </div>
+        <div className="mt-auto flex justify-between items-center border-t border-slate-100 pt-3 gap-2">
+            
+            {/* 按讚 (可取消) */}
             <button 
                 onClick={(e) => { e.stopPropagation(); onLike(asset.id); }}
-                className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full transition ${
+                className={`flex-1 flex items-center justify-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition ${
                     isLiked 
                     ? 'bg-rose-100 text-rose-600' 
-                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
                 }`}
             >
                 <Heart className={`w-3 h-3 ${isLiked ? 'fill-current' : ''}`} />
-                {asset.likes}
+                {likesCount}
             </button>
+
+            {/* 投票 (不可取消) */}
+            <button 
+                onClick={(e) => { e.stopPropagation(); !isVoted && onVote(asset.id); }}
+                disabled={isVoted}
+                className={`flex-1 flex items-center justify-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition ${
+                    isVoted 
+                    ? 'bg-amber-100 text-amber-600 cursor-default' 
+                    : 'bg-slate-50 text-slate-500 hover:bg-amber-50 hover:text-amber-600'
+                }`}
+                title={isVoted ? "已投過票" : "投下神聖一票 (不可取消)"}
+            >
+                <Star className={`w-3 h-3 ${isVoted ? 'fill-current' : ''}`} />
+                {votesCount}
+            </button>
+
         </div>
       </div>
     </div>

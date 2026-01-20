@@ -10,7 +10,7 @@ import GalleryViewerModal from "@/components/features/gallery/GalleryViewerModal
 import { StudentAsset } from "@/lib/types/gamification";
 
 export default function GalleryPage() {
-  const { id: userId, toggleLike } = useUserStore();
+  const { id: userId, toggleLike, voteForAsset } = useUserStore();
   const { lessons } = useLessons();
   
   const [assets, setAssets] = useState<StudentAsset[]>([]);
@@ -18,65 +18,72 @@ export default function GalleryPage() {
   const [viewingAsset, setViewingAsset] = useState<StudentAsset | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 讀取 LocalStorage 中的真實資產
   const loadAssets = () => {
       try {
           const raw = localStorage.getItem('wenxin-assets-repository');
           if (raw) {
               const allAssets: StudentAsset[] = JSON.parse(raw);
-              // 篩選條件：狀態為 verified 且類型為 logic-map
               const verified = allAssets.filter(a => 
-                  a.status === 'verified' && a.type === 'logic-map'
+                  a && a.status === 'verified' && a.type === 'logic-map'
               );
               setAssets(verified);
           }
-      } catch (e) {
-          console.error(e);
-      } finally {
-          setIsLoading(false);
-      }
+      } catch (e) { console.error(e); } 
+      finally { setIsLoading(false); }
   };
 
-  useEffect(() => {
-      loadAssets();
-      // 這裡可以加入 storage event listener 來實現跨分頁同步，但在 MVP 中手動觸發 state 更新即可
-  }, []);
+  useEffect(() => { loadAssets(); }, []);
 
   const handleLike = (assetId: string) => {
       toggleLike(assetId);
-      // Optimistic UI update: 本地直接更新狀態，讓使用者覺得很快
       setAssets(prev => prev.map(a => {
-          if (a.id !== assetId) return a;
-          const hasLiked = a.likedBy.includes(userId);
+          if (!a || a.id !== assetId) return a;
+          const likedBy = a.likedBy || [];
+          const hasLiked = likedBy.includes(userId);
           return {
               ...a,
-              likes: hasLiked ? a.likes - 1 : a.likes + 1,
-              likedBy: hasLiked ? a.likedBy.filter(id => id !== userId) : [...a.likedBy, userId]
+              likes: hasLiked ? (a.likes || 0) - 1 : (a.likes || 0) + 1,
+              likedBy: hasLiked ? likedBy.filter(id => id !== userId) : [...likedBy, userId]
           };
       }));
   };
 
-  // 篩選邏輯
-  const filteredAssets = selectedLessonId === 'all' 
+  const handleVote = (assetId: string) => {
+      if (confirm("✨ 確定要將您的票投給這個作品嗎？\n投票後無法取消，且會給予作者實質獎勵喔！")) {
+          const success = voteForAsset(assetId);
+          if (success) {
+              setAssets(prev => prev.map(a => {
+                  if (!a || a.id !== assetId) return a;
+                  return {
+                      ...a,
+                      votes: (a.votes || 0) + 1,
+                      votedBy: [...(a.votedBy || []), userId]
+                  };
+              }));
+              alert("🎉 投票成功！");
+          } else {
+              alert("您已經投過票囉！");
+          }
+      }
+  };
+
+  const filteredAssets = (selectedLessonId === 'all' 
       ? assets 
       : assets.filter(a => {
-          // 嘗試從 ID 或 targetText 判斷 lessonId
+          if (!a) return false;
           const target = a.targetText || (a.id.match(/(lesson-\d+)/)?.[1]);
           return target === selectedLessonId;
-      });
+      })).filter(Boolean); // 🔥 最後一道防線：濾除所有 undefined/null
 
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
       <div className="ml-64 flex-1 p-10">
-        
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
                 <h1 className="text-3xl font-bold text-slate-900 mb-2">佳作畫廊</h1>
-                <p className="text-slate-600">觀摩同學的優秀作品，激發更多靈感。</p>
+                <p className="text-slate-600">觀摩同學作品，投下神聖一票給予獎勵。</p>
             </div>
-            
             <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
                 <Filter className="w-4 h-4 text-slate-400 ml-2" />
                 <select 
@@ -90,7 +97,6 @@ export default function GalleryPage() {
             </div>
         </div>
 
-        {/* Content */}
         {isLoading ? (
             <div className="flex h-64 items-center justify-center">
                 <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
@@ -111,19 +117,18 @@ export default function GalleryPage() {
                         asset={asset} 
                         currentUserId={userId}
                         onLike={handleLike}
+                        onVote={handleVote}
                         onClick={setViewingAsset}
                     />
                 ))}
             </div>
         )}
 
-        {/* Modal */}
         <GalleryViewerModal 
             asset={viewingAsset}
             isOpen={!!viewingAsset}
             onClose={() => setViewingAsset(null)}
         />
-
       </div>
     </div>
   );
