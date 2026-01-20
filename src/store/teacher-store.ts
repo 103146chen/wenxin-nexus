@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { ClassRoom } from '@/lib/types/class-management';
 import { MOCK_CLASSES } from '@/lib/data/mock-class-data';
 import { StudentAsset } from '@/lib/types/gamification';
-import { Lesson } from '@/lib/data/lessons';
+import { Lesson, QuizSet } from '@/lib/data/lessons';
 
 export type AssignmentLevel = 'A' | 'B' | 'C';
 
@@ -22,9 +22,8 @@ export interface PendingItem {
 export interface Assignment {
   classId: string;
   lessonId: string;
-  level: AssignmentLevel; // 全班預設等級
+  level: AssignmentLevel;
   deadline?: string;
-  // 🔥 新增：個別學生覆寫設定 { studentId: 'A' }
   overrides?: Record<string, AssignmentLevel>;
 }
 
@@ -41,13 +40,14 @@ interface TeacherState {
   
   assignTask: (assignment: Assignment) => void;
   getAssignment: (classId: string, lessonId: string) => Assignment | undefined;
-  // 🔥 新增：取得特定學生的最終指派等級 (考慮覆寫)
   getStudentLevel: (classId: string, lessonId: string, studentId: string) => AssignmentLevel | undefined;
   
   getPendingSubmissions: () => PendingItem[];
   gradeSubmission: (item: PendingItem, status: 'verified' | 'rejected', feedback: string) => void;
   getClassById: (id: string) => ClassRoom | undefined;
+  
   addLesson: (lesson: Lesson) => void;
+  updateLesson: (lessonId: string, updates: Partial<Lesson>) => void;
   deleteLesson: (lessonId: string) => void;
 }
 
@@ -79,6 +79,8 @@ export const useTeacherStore = create<TeacherState>()(
           name,
           code: `WEN-${Math.floor(Math.random() * 900) + 100}`,
           semester,
+          // 🔥 修正：補上 ownerId，暫時預設為 't-001'
+          ownerId: 't-001',
           students: [],
           progressMatrix: {}
         };
@@ -133,7 +135,6 @@ export const useTeacherStore = create<TeacherState>()(
       })),
 
       assignTask: (newAssignment) => set(state => {
-        // 移除舊的同課程指派，加入新的
         const filtered = state.activeAssignments.filter(
             a => !(a.classId === newAssignment.classId && a.lessonId === newAssignment.lessonId)
         );
@@ -144,16 +145,13 @@ export const useTeacherStore = create<TeacherState>()(
           return get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
       },
 
-      // 🔥 核心邏輯：判斷學生等級 (Override > Default)
       getStudentLevel: (classId, lessonId, studentId) => {
           const assignment = get().activeAssignments.find(a => a.classId === classId && a.lessonId === lessonId);
-          if (!assignment) return undefined; // 尚未派題
+          if (!assignment) return undefined;
           
-          // 如果有個別覆寫，優先使用
           if (assignment.overrides && assignment.overrides[studentId]) {
               return assignment.overrides[studentId];
           }
-          // 否則回傳全班預設
           return assignment.level;
       },
 
@@ -261,6 +259,9 @@ export const useTeacherStore = create<TeacherState>()(
 
       getClassById: (id) => get().classes.find(c => c.id === id),
       addLesson: (lesson) => set((state) => ({ customLessons: [...state.customLessons, lesson] })),
+      updateLesson: (lessonId, updates) => set((state) => ({
+          customLessons: state.customLessons.map(l => l.id === lessonId ? { ...l, ...updates } : l)
+      })),
       deleteLesson: (id) => set((state) => ({ customLessons: state.customLessons.filter(l => l.id !== id) })),
     }),
     { name: 'wenxin-teacher-storage' }

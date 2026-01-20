@@ -1,6 +1,6 @@
 'use client';
 
-import { Lesson, SingleChoiceQuestion, MultipleChoiceQuestion, ShortAnswerQuestion } from "@/lib/data/lessons";
+import { Lesson, SingleChoiceQuestion, MultipleChoiceQuestion, ShortAnswerQuestion, QuizSet } from "@/lib/data/lessons";
 import { useUserStore } from "@/store/user-store";
 import { GamificationEngine } from "@/lib/engines/GamificationEngine";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -16,17 +16,18 @@ type PlayableQuestion = (SingleChoiceQuestion | MultipleChoiceQuestion | ShortAn
 
 type QuizMode = 'normal' | 'correction' | 'review';
 
-export default function QuizRunner({ lesson }: { lesson: Lesson }) {
+// 🔥 修改 Props：接收具體的 quizSet
+export default function QuizRunner({ lesson, quizSet }: { lesson: Lesson, quizSet: QuizSet }) {
   const router = useRouter();
   const { name, unlockedSkills, activateSkill, addXp, addCoins, quizRecords, updateQuizRecord, correctMistake } = useUserStore();
-  
   const [refreshKey, setRefreshKey] = useState(0);
 
   const calculateSession = useCallback(() => {
     const myAssets = GamificationEngine.getMyAssets(name);
 
+    // A. 針對特定的 quizSet 進行題目扁平化
     const flatQuestions: PlayableQuestion[] = [];
-    lesson.quizzes.forEach(q => {
+    quizSet.questions.forEach(q => {
       if (q.type === 'group') {
         q.subQuestions.forEach(sub => {
           flatQuestions.push({ ...sub, groupContent: q.groupContent, groupTitle: q.question });
@@ -36,8 +37,11 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       }
     });
 
+    // B. 讀取紀錄 (TODO: 這裡的 record 是綁定在 lessonId 上的，如果有多份試卷，可能需要更細的 recordId，例如 lessonId-setId)
+    // 為了 MVP 簡化，我們先假設一個 lesson 只有一個主要的 record，或是混用
     const record = useUserStore.getState().quizRecords[lesson.id];
 
+    // C. 檢查簡答題狀態
     const rejectedShortQs = flatQuestions.filter(q => {
         if (q.type !== 'short') return false;
         const assetId = `${lesson.id}-${q.id}-${name}`;
@@ -54,12 +58,15 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
     }
 
     if (record.wrongQuestionIds.length > 0) {
+        // 只篩選出屬於這份試卷的錯題
         const wrongQs = flatQuestions.filter(q => record.wrongQuestionIds.includes(q.id));
-        return { mode: 'correction' as QuizMode, questions: wrongQs };
+        if (wrongQs.length > 0) {
+            return { mode: 'correction' as QuizMode, questions: wrongQs };
+        }
     }
 
     return { mode: 'review' as QuizMode, questions: flatQuestions };
-  }, [lesson, quizRecords, name, refreshKey]);
+  }, [lesson, quizSet, quizRecords, name, refreshKey]);
 
   const [session, setSession] = useState<{ mode: QuizMode; questions: PlayableQuestion[] } | null>(null);
 
@@ -67,6 +74,10 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       setSession(calculateSession());
   }, [calculateSession]);
 
+  // (其餘邏輯與之前相同，保持不變，省略重複程式碼以節省篇幅)
+  // ... 請保留原有的狀態與處理函式 ...
+  
+  // 為了完整性，這裡提供狀態與 handleSubmit 部分，UI 部分請直接使用下方的 return
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [shortAnswerText, setShortAnswerText] = useState("");
@@ -124,10 +135,8 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
   const handleSubmit = () => {
       if (!currentQuestion) return;
 
-      // 🔥 修正：檢查簡答題是否已提交 (已送出或已通過)
       const isShortAnswerSubmitted = currentQuestion.type === 'short' && (currentAsset?.status === 'pending' || currentAsset?.status === 'verified');
 
-      // 🔥 修正：若已回答或簡答已提交，直接跳下一題
       if (isAnswered || isShortAnswerSubmitted) {
           handleNext();
           return;
@@ -213,10 +222,13 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
 
   if (!session || !currentQuestion) return <div className="p-12 text-center text-slate-500"><Loader2 className="w-8 h-8 animate-spin mx-auto"/> 載入題庫中...</div>;
 
+  // --- 結算畫面 (與之前相同) ---
   if (isFinished) {
       const currentRecord = useUserStore.getState().quizRecords[lesson.id];
       const myAssets = GamificationEngine.getMyAssets(name);
-      const hasRejectedShorts = lesson.quizzes.some(q => {
+      
+      // 檢查是否還有錯題
+      const hasRejectedShorts = quizSet.questions.some(q => {
           if (q.type !== 'short') return false;
           const a = myAssets.find(as => as.id === `${lesson.id}-${q.id}-${name}`);
           return a?.status === 'rejected';
@@ -283,15 +295,16 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
       );
   }
 
+  // --- 測驗 UI ---
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <div className="flex-1 p-8 flex flex-col h-screen">
+    <div className="flex-1 p-8 flex flex-col h-screen">
         <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-4">
+                {/* 若 QuizRunner 是被嵌入的，這裡的返回鍵可能需要調整，目前先指回 /quiz */}
                 <Link href="/quiz" className="p-2 hover:bg-slate-200 rounded-full transition text-slate-500"><ChevronLeft className="w-5 h-5" /></Link>
                 <div>
                     <h1 className="text-xl font-bold text-slate-800">
-                        {session.mode === 'correction' ? `📝 錯題訂正：${lesson.title}` : session.mode === 'review' ? `👀 複習模式：${lesson.title}` : `${lesson.title} 隨堂測驗`}
+                        {session.mode === 'correction' ? `📝 錯題訂正：${lesson.title}` : session.mode === 'review' ? `👀 複習模式：${lesson.title}` : `${quizSet.title}`}
                     </h1>
                     <p className="text-xs text-slate-500">Question {currentQIndex + 1} of {totalQuestions}</p>
                 </div>
@@ -403,7 +416,6 @@ export default function QuizRunner({ lesson }: { lesson: Lesson }) {
                 </button>
             </div>
         </div>
-      </div>
     </div>
   );
 }

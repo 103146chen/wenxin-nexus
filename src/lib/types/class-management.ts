@@ -17,8 +17,7 @@ export interface LessonProgress {
   hasReflection: boolean; // 是否寫了反思
   hasLogicMap: boolean; // 是否畫了邏輯圖
   logicMapStatus?: AssetStatus; // 邏輯圖審核狀態
-  // 🔥 新增：筆記數量 (修復錯誤)
-  annotationCount: number;
+  annotationCount: number; // 筆記數量
 }
 
 export interface ClassRoom {
@@ -26,6 +25,11 @@ export interface ClassRoom {
   name: string; // e.g. "高一仁班"
   code: string; // e.g. "WEN-101"
   semester: string; // e.g. "113-1"
+  
+  // 🔥 新增：班級擁有者 (導師) ID
+  // 這讓我們可以區分不同老師的班級
+  ownerId: string;
+
   students: StudentSummary[];
   // 記錄每個學生對每一課的進度：Record<StudentId, Record<LessonId, Progress>>
   progressMatrix: Record<string, Record<string, LessonProgress>>;

@@ -22,6 +22,8 @@ import { useState, useMemo, useEffect } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import DifferentiationModal from "@/components/features/teacher/DifferentiationModal";
 import ClassManagementModal from "@/components/features/teacher/ClassManagementModal";
+// 🔥 引入 Helper
+import { getAllQuestions } from "@/lib/data/lessons";
 
 export default function TeacherDashboard() {
   const { classes, selectedClassId, selectClass, getPendingSubmissions, activeAssignments } = useTeacherStore();
@@ -88,9 +90,13 @@ export default function TeacherDashboard() {
       const completionRate = totalAssignedTasks > 0 ? Math.round((completedTasks / totalAssignedTasks) * 100) : 0;
 
       const lesson = lessons.find(l => l.id === selectedLessonId);
+      
+      // 🔥 修正：使用 getAllQuestions 獲取所有題目
+      const allQuestions = lesson ? getAllQuestions(lesson) : [];
+
       const wrongStats = Object.entries(wrongCounts)
           .map(([qid, count]) => {
-              const question = lesson?.quizzes.find(q => q.id === qid);
+              const question = allQuestions.find(q => q.id === qid);
               const shortText = question ? (question.question.substring(0, 10) + '...') : qid;
               return { name: shortText, count, fullQuestion: question?.question };
           })
@@ -230,7 +236,6 @@ export default function TeacherDashboard() {
                                 const relatedLesson = lessons.find(l => l.id === item.lessonId);
                                 const lessonTitle = relatedLesson?.title || item.lessonId;
                                 
-                                // 🔥 修正：完整的作業類型判斷
                                 const displayType = item.type === 'logic-map' ? '邏輯圖' 
                                                   : item.type === 'annotation' ? '閱讀筆記' 
                                                   : item.type === 'quiz-short' ? '簡答題'
