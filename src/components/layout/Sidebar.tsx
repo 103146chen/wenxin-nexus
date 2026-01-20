@@ -12,36 +12,33 @@ import {
   UserCircle,
   Trophy,
   GalleryVerticalEnd,
-  CheckCircle // 🔥 直接從 lucide-react 引入，刪除下方的自定義組件
+  CheckCircle,
+  Library
 } from "lucide-react";
-// 🔥 修正引入方式：改為具名引入 (加上大括號)
-import { UserProfileCard } from "@/components/gamification/UserProfileCard"; 
+import { UserProfileCard } from "@/components/gamification/UserProfileCard";
 import { useEffect } from "react";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { role, logout, checkAndClaimRewards } = useUserStore();
 
-  // 自動檢查獎勵
   useEffect(() => {
-      if (role === 'student') {
-          // 確保 checkAndClaimRewards 存在 (防止 user-store 尚未更新導致崩潰)
-          if (checkAndClaimRewards) {
-              const result = checkAndClaimRewards();
-              if (result.totalCoins > 0 || result.totalXp > 0) {
-                  const msgParts = [];
-                  if (result.verificationCount > 0) msgParts.push(`${result.verificationCount} 份作業通過審核`);
-                  if (result.voteCount > 0) msgParts.push(`獲得 ${result.voteCount} 張同學投票`);
-                  
-                  alert(`🎁 恭喜！您有新的學習獎勵！\n\n原因：${msgParts.join('、')}\n獲得：+${result.totalCoins} 文心幣、+${result.totalXp} XP`);
-              }
+      if (role === 'student' && checkAndClaimRewards) {
+          const result = checkAndClaimRewards();
+          if (result.totalCoins > 0 || result.totalXp > 0) {
+              const msgParts = [];
+              if (result.verificationCount > 0) msgParts.push(`${result.verificationCount} 份作業通過審核`);
+              if (result.voteCount > 0) msgParts.push(`獲得 ${result.voteCount} 張同學投票`);
+              
+              alert(`🎁 恭喜！您有新的學習獎勵！\n\n原因：${msgParts.join('、')}\n獲得：+${result.totalCoins} 文心幣、+${result.totalXp} XP`);
           }
       }
   }, [role, pathname, checkAndClaimRewards]);
 
   const navItems = role === 'teacher' ? [
     { name: '指揮中心', href: '/dashboard', icon: LayoutDashboard },
-    { name: '課程編輯', href: '/teacher/lessons/new', icon: BookOpen },
+    // 🔥 修改：指向列表頁，圖示改為 Library
+    { name: '課程管理', href: '/teacher/lessons', icon: Library }, 
     { name: '作業批閱', href: '/teacher/verification', icon: CheckCircle }, 
   ] : [
     { name: '虛擬書齋', href: '/study', icon: BookOpen },
@@ -52,8 +49,6 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 h-screen bg-slate-900 text-white fixed left-0 top-0 flex flex-col shadow-xl z-50">
-      
-      {/* Brand */}
       <div className="p-6 border-b border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-xl">
@@ -66,9 +61,9 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {navItems.map((item) => {
+          // 讓 /teacher/lessons/new 也能點亮 /teacher/lessons
           const isActive = pathname.startsWith(item.href);
           return (
             <Link 
@@ -87,7 +82,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User Profile (Bottom) */}
       <div className="p-4 bg-slate-950 border-t border-slate-800">
         {role === 'student' ? (
             <UserProfileCard />

@@ -1,27 +1,31 @@
-'use client';
-
-import { useMemo } from 'react';
-import { ALL_LESSONS, Lesson } from '@/lib/data/lessons';
+import { create } from 'zustand';
+import { ALL_LESSONS, Lesson, getLessonById, getAllQuestions } from '@/lib/data/lessons';
 import { useTeacherStore } from '@/store/teacher-store';
 
-export function useLessons() {
+// 這裡我們不使用 create(store)，而是直接寫成 Hook，
+// 因為它需要整合 TeacherStore 的動態資料與靜態資料
+export const useLessons = () => {
   const { customLessons } = useTeacherStore();
 
-  const lessons = useMemo(() => {
-    // 將靜態課程與老師新增的課程合併
-    // 確保 customLessons 存在 (防呆)
-    return [...ALL_LESSONS, ...(customLessons || [])];
-  }, [customLessons]);
+  // 1. 合併所有課程 (用於 getLesson 查詢，確保舊 ID 或新 ID 都能找到)
+  const allAvailableLessons = [...customLessons, ...ALL_LESSONS];
 
-  // 輔助函式：根據 ID 找課程
-  const getLesson = (id: string) => lessons.find(l => l.id === id);
+  // 2. 學生可見課程 (只包含老師建立/複製的自訂課程)
+  // 這樣就達成了 "內建課程預設隱藏，老師複製後學生才看得到" 的需求
+  const studentLessons = customLessons;
 
-  // 輔助函式：根據作者找課程
-  const getLessonsByAuthor = (author: string) => lessons.filter(l => l.author === author);
+  // 3. 系統內建課程 (僅供老師參考複製)
+  const systemLessons = ALL_LESSONS;
+
+  const getLesson = (id: string): Lesson | undefined => {
+    return allAvailableLessons.find(l => l.id === id);
+  };
 
   return {
-    lessons,
+    lessons: allAvailableLessons, // 供內部邏輯查詢用 (包含全部)
+    studentLessons,               // 供學生列表頁顯示用 (只含自訂)
+    systemLessons,                // 供老師庫存頁顯示用 (只含內建)
     getLesson,
-    getLessonsByAuthor
+    getAllQuestions
   };
-}
+};
