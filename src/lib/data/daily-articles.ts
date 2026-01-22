@@ -3,7 +3,7 @@ export interface DailyQuestion {
   question: string;
   options: string[];
   correctIndex: number;
-  hint: string; // 錯誤時的引導
+  hint: string;
 }
 
 export interface DailyArticle {
@@ -12,6 +12,8 @@ export interface DailyArticle {
   author: string;
   content: string;
   questions: DailyQuestion[];
+  // 🔥 新增：發布日期 (YYYY-MM-DD)
+  publishDate: string;
 }
 
 export const DAILY_ARTICLES: DailyArticle[] = [
@@ -19,6 +21,7 @@ export const DAILY_ARTICLES: DailyArticle[] = [
     id: 'daily-1',
     title: '愛蓮說',
     author: '宋 ‧ 周敦頤',
+    publishDate: new Date().toISOString().split('T')[0], // 預設為今天
     content: `水陸草木之花，可愛者甚蕃。晉陶淵明獨愛菊。自李唐來，世人甚愛牡丹。予獨愛蓮之出淤泥而不染，濯清漣而不妖，中通外直，不蔓不枝，香遠益清，亭亭淨植，可遠觀而不可褻玩焉。
 
 予謂：菊，花之隱逸者也；牡丹，花之富貴者也；蓮，花之君子者也。噫！菊之愛，陶後鮮有聞；蓮之愛，同予者何人？牡丹之愛，宜乎眾矣！`,
@@ -64,6 +67,7 @@ export const DAILY_ARTICLES: DailyArticle[] = [
     id: 'daily-2',
     title: '座右銘',
     author: '漢 ‧ 崔瑗',
+    publishDate: new Date(Date.now() - 86400000).toISOString().split('T')[0], // 設為昨天
     content: `無道人之短，無說己之長。施人慎勿念，受施慎勿忘。世譽不足慕，唯仁為紀綱。隱心而後動，謗議庸何傷？無使名過實，守愚聖所臧。在涅貴不淄，曖曖內含光。柔弱生之徒，老氏戒剛強。行行鄙夫志，悠悠故難量。慎言節飲食，知足勝不祥。行之苟有恆，久久自芬芳。`,
     questions: [
       {

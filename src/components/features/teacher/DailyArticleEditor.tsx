@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { DailyArticle, DailyQuestion } from '@/lib/data/daily-articles';
-import { Save, Plus, Trash2, CheckCircle, HelpCircle } from 'lucide-react';
+import { Save, Plus, Trash2, CheckCircle, HelpCircle, Calendar } from 'lucide-react';
 
 interface DailyArticleEditorProps {
   initialData?: DailyArticle;
@@ -13,6 +13,8 @@ export default function DailyArticleEditor({ initialData, onSave }: DailyArticle
   const [title, setTitle] = useState(initialData?.title || '');
   const [author, setAuthor] = useState(initialData?.author || '');
   const [content, setContent] = useState(initialData?.content || '');
+  // 🔥 新增日期
+  const [publishDate, setPublishDate] = useState(initialData?.publishDate || new Date().toISOString().split('T')[0]);
   const [questions, setQuestions] = useState<DailyQuestion[]>(initialData?.questions || []);
 
   const addQuestion = () => {
@@ -48,7 +50,8 @@ export default function DailyArticleEditor({ initialData, onSave }: DailyArticle
           title,
           author,
           content,
-          questions
+          questions,
+          publishDate
       });
   };
 
@@ -57,30 +60,40 @@ export default function DailyArticleEditor({ initialData, onSave }: DailyArticle
         
         {/* Left: Article Info */}
         <div className="w-1/2 border-r border-slate-200 p-8 overflow-y-auto">
-            <h3 className="font-bold text-lg mb-6 text-slate-800">文章內容</h3>
+            <h3 className="font-bold text-lg mb-6 text-slate-800">文章內容與排程</h3>
             <div className="space-y-6">
                 <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">文章標題</label>
                     <input value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 border rounded-xl font-bold" placeholder="例如：愛蓮說" />
                 </div>
-                <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">作者</label>
-                    <input value={author} onChange={e => setAuthor(e.target.value)} className="w-full p-3 border rounded-xl" placeholder="例如：周敦頤" />
+                
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">作者</label>
+                        <input value={author} onChange={e => setAuthor(e.target.value)} className="w-full p-3 border rounded-xl" placeholder="例如：周敦頤" />
+                    </div>
+                    {/* 🔥 日期選擇器 */}
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-1"><Calendar className="w-4 h-4"/> 發布日期</label>
+                        <input type="date" value={publishDate} onChange={e => setPublishDate(e.target.value)} className="w-full p-3 border rounded-xl" />
+                    </div>
                 </div>
+
                 <div className="flex-1 flex flex-col">
                     <label className="block text-sm font-bold text-slate-700 mb-2">內文</label>
                     <textarea 
                         value={content} 
                         onChange={e => setContent(e.target.value)} 
-                        className="w-full p-4 border rounded-xl font-serif text-lg leading-loose min-h-[400px]" 
+                        className="w-full p-4 border rounded-xl font-serif text-lg leading-loose min-h-[300px]" 
                         placeholder="請貼上文章內容..." 
                     />
                 </div>
             </div>
         </div>
 
-        {/* Right: Questions */}
+        {/* Right: Questions (保持原樣) */}
         <div className="w-1/2 p-8 overflow-y-auto bg-slate-50">
+            {/* ... (測驗編輯部分保持原樣) ... */}
             <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-lg text-slate-800">測驗題目 ({questions.length})</h3>
                 <button onClick={addQuestion} className="flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-600 rounded-lg font-bold hover:bg-indigo-200">

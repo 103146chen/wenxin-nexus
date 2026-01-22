@@ -14,6 +14,11 @@ export default function DailyManagerPage() {
       }
   };
 
+  // 排序：日期新的在上面
+  const sortedArticles = [...articles].sort((a, b) => 
+      new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime()
+  );
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
@@ -36,11 +41,12 @@ export default function DailyManagerPage() {
             </div>
         ) : (
             <div className="space-y-4">
-                {articles.map(article => (
+                {sortedArticles.map(article => (
                     <div key={article.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition flex justify-between items-center group">
                         <div className="flex items-center gap-6">
-                            <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center font-bold">
-                                <Calendar className="w-6 h-6"/>
+                            <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-xl flex flex-col items-center justify-center font-bold border border-orange-100">
+                                <span className="text-xs text-orange-400 uppercase">{new Date(article.publishDate).toLocaleString('en-US', { month: 'short' })}</span>
+                                <span className="text-xl">{new Date(article.publishDate).getDate()}</span>
                             </div>
                             <div>
                                 <h3 className="text-lg font-bold text-slate-800">{article.title}</h3>

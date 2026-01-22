@@ -9,45 +9,74 @@ export type UserRole = 'student' | 'teacher' | 'guest';
 export interface DailyProgress {
     articleId: string;
     isCompleted: boolean;
-    hasError: boolean; // 是否曾經答錯 (影響 Bonus)
+    hasError: boolean;
 }
 
-interface UserState {
-  // ... (原有欄位)
+// 定義需要隨使用者切換的資料欄位
+interface UserSpecificData {
+    level: number;
+    xp: number;
+    coins: number;
+    sp: number;
+    unlockedSkills: string[];
+    inventory: { itemId: string; count: number }[];
+    skillCooldowns: Record<string, number>;
+    activeTheme: string;
+    activeFrame: string;
+    streakDays: number;
+    lastCompletedDate: string;
+    streakStatus: 'active' | 'broken' | 'repaired';
+    dailyMission: {
+        date: string;
+        progress: DailyProgress[];
+        isRewardClaimed: boolean;
+    };
+    aiDailyUsage: number;
+    quizRecords: Record<string, any>;
+    annotations: Record<string, Annotation[]>;
+    lifetimeVotesClaimed: number;
+    lastLoginDate: string;
+}
+
+// 預設值產生器
+const getDefaultUserData = (): UserSpecificData => ({
+    level: 1,
+    xp: 0,
+    coins: 0,
+    sp: 0,
+    unlockedSkills: [],
+    inventory: [],
+    skillCooldowns: {},
+    activeTheme: 'default',
+    activeFrame: 'default',
+    streakDays: 0,
+    lastCompletedDate: '',
+    streakStatus: 'active',
+    dailyMission: {
+        date: new Date().toISOString().split('T')[0],
+        progress: [],
+        isRewardClaimed: false
+    },
+    aiDailyUsage: 0,
+    quizRecords: {},
+    annotations: {},
+    lifetimeVotesClaimed: 0,
+    lastLoginDate: new Date().toISOString().split('T')[0],
+});
+
+interface UserState extends UserSpecificData {
+  // Global State (Current Session)
   id: string;
   name: string;
   title: string;
   avatar: string;
-  level: number;
-  xp: number;
-  maxXp: number;
-  coins: number;
-  sp: number;
-  unlockedSkills: string[];
-  inventory: { itemId: string; count: number }[];
-  skillCooldowns: Record<string, number>;
-  activeTheme: string;
-  activeFrame: string;
-  
-  // 連勝相關
-  streakDays: number;
-  lastCompletedDate: string; // 上次「完成全套任務」的日期
-  streakStatus: 'active' | 'broken' | 'repaired'; // 狀態機
-
-  // 每日任務
-  dailyMission: {
-      date: string;
-      progress: DailyProgress[];
-      isRewardClaimed: boolean;
-  };
-
-  aiDailyUsage: number;
-  aiMaxDailyFree: number;
-  quizRecords: Record<string, any>;
-  annotations: Record<string, Annotation[]>;
   classId: string | null;
   isLoggedIn: boolean;
   role: UserRole;
+  
+  // 資料庫：儲存所有使用者的資料
+  usersData: Record<string, UserSpecificData>; 
+  aiMaxDailyFree: number;
 
   // Actions
   addXp: (amount: number) => void;
@@ -63,18 +92,18 @@ interface UserState {
   addAnnotation: (lessonId: string, annotation: Omit<Annotation, 'id' | 'createdAt' | 'type'>) => void;
   removeAnnotation: (lessonId: string, id: string) => void;
   joinClass: (code: string) => boolean;
+  
   login: (role: UserRole, username?: string, userId?: string) => void;
   logout: () => void;
+  
   toggleLike: (assetId: string) => void;
   voteForAsset: (assetId: string) => boolean; 
   checkAndClaimRewards: () => any;
   consumeAiQuota: () => 'success' | 'limit_reached' | 'paid_success';
 
-  // 🔥 每日任務與連勝 Actions
-  checkStreakStatus: () => void; // 檢查是否斷簽
-  repairStreak: () => boolean;   // 使用道具補簽
-  acceptStreakBreak: () => void; // 接受斷簽 (歸零)
-  
+  checkStreakStatus: () => void;
+  repairStreak: () => boolean;
+  acceptStreakBreak: () => void;
   markArticleError: (articleId: string) => void;
   completeDailyArticle: (articleId: string, isPerfect: boolean) => void;
   claimDailyMissionReward: () => void;
@@ -83,68 +112,84 @@ interface UserState {
 const calculateLevelFromXp = (xp: number) => Math.floor(0.1 * Math.sqrt(xp)) || 1;
 const calculateXpForNextLevel = (currentLevel: number) => Math.pow((currentLevel + 1) * 10, 2);
 
+// 🔥 核心修復：從 State 中乾淨地提取 UserData，避免將 Function 存入 DB
+const extractUserData = (state: UserState): UserSpecificData => ({
+    level: state.level,
+    xp: state.xp,
+    coins: state.coins,
+    sp: state.sp,
+    unlockedSkills: state.unlockedSkills,
+    inventory: state.inventory,
+    skillCooldowns: state.skillCooldowns,
+    activeTheme: state.activeTheme,
+    activeFrame: state.activeFrame,
+    streakDays: state.streakDays,
+    lastCompletedDate: state.lastCompletedDate,
+    streakStatus: state.streakStatus,
+    dailyMission: state.dailyMission,
+    aiDailyUsage: state.aiDailyUsage,
+    quizRecords: state.quizRecords,
+    annotations: state.annotations,
+    lifetimeVotesClaimed: state.lifetimeVotesClaimed,
+    lastLoginDate: state.lastLoginDate,
+});
+
 export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
-      // Init
-      id: 's-0',
-      isLoggedIn: true, 
-      role: 'student', 
-      name: '李白',
-      title: '詩仙',
-      avatar: 'scholar_m',
-      classId: 'class-101', 
-      level: 5,
-      xp: 2500,
-      maxXp: 3600,
-      coins: 800,
-      sp: 2, 
-      unlockedSkills: [],
-      inventory: [{ itemId: 'streak-freeze', count: 1 }], // 預設給一張補簽卡測試
-      skillCooldowns: {}, 
-      activeTheme: 'default',
-      activeFrame: 'default',
+      // ... 展開預設值 ...
+      ...getDefaultUserData(),
       
-      streakDays: 5, // 預設 5 天連勝
-      lastCompletedDate: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0], // 故意設為前天，模擬斷簽
-      streakStatus: 'active',
-
-      dailyMission: {
-          date: new Date().toISOString().split('T')[0],
-          progress: [],
-          isRewardClaimed: false
-      },
-      aiDailyUsage: 0,
+      id: 's-0',
+      isLoggedIn: false, 
+      role: 'guest', 
+      name: '訪客',
+      title: '',
+      avatar: '',
+      classId: null, 
+      
+      usersData: {}, 
       aiMaxDailyFree: 10,
-      quizRecords: {},
-      annotations: {}, 
-      lifetimeVotesClaimed: 0,
-      lastLoginDate: new Date().toISOString().split('T')[0],
 
-      // ... (Standard Actions) ...
+      // --- Actions ---
+      
       addXp: (amount) => { 
-          const { xp, level, coins, sp } = get();
-          const newXp = xp + amount;
+          const state = get();
+          const newXp = state.xp + amount;
           const newLevel = calculateLevelFromXp(newXp);
-          let newCoins = coins;
-          let newSp = sp;
-          if (newLevel > level) {
+          let newCoins = state.coins;
+          let newSp = state.sp;
+          
+          if (newLevel > state.level) {
             newCoins += 100;
             newSp += 1; 
             alert(`🎉 恭喜升級 Lv.${newLevel}！\n獲得 100 文心幣 與 1 技能點 (SP)`);
           }
-          set({ xp: newXp, level: newLevel, maxXp: calculateXpForNextLevel(newLevel), coins: newCoins, sp: newSp });
+          
+          const updates = { xp: newXp, level: newLevel, maxXp: calculateXpForNextLevel(newLevel), coins: newCoins, sp: newSp };
+          set(updates);
+          
+          // Sync using extractor
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
       },
-      addCoins: (amount) => set((state) => ({ coins: state.coins + amount })),
+
+      addCoins: (amount) => {
+          set(state => ({ coins: state.coins + amount }));
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
+      },
+
       updateProfile: (name) => set({ name }),
+      
       unlockSkill: (skillId, cost) => {
         const { sp, unlockedSkills } = get();
         if (sp >= cost && !unlockedSkills.includes(skillId)) {
           set({ sp: sp - cost, unlockedSkills: [...unlockedSkills, skillId] });
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
           return true;
         }
         return false;
       },
+
       buyItem: (itemId, price) => {
         const { coins, inventory } = get();
         if (coins >= price) {
@@ -152,11 +197,14 @@ export const useUserStore = create<UserState>()(
           let newInv = [...inventory];
           if (idx >= 0) newInv[idx].count += 1;
           else newInv.push({ itemId, count: 1 });
+          
           set({ coins: coins - price, inventory: newInv });
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
           return true;
         }
         return false;
       },
+
       useItem: (itemId) => {
         const { inventory } = get();
         const idx = inventory.findIndex(i => i.itemId === itemId);
@@ -165,130 +213,240 @@ export const useUserStore = create<UserState>()(
             newInv[idx].count -= 1;
             if (newInv[idx].count === 0) newInv.splice(idx, 1);
             set({ inventory: newInv });
+            set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
             return true;
         }
         return false;
       },
+
       equipItem: (itemId, category) => {
           if (category === 'theme') set({ activeTheme: itemId });
           else if (category === 'avatar') set({ activeFrame: itemId });
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
       },
+
       activateSkill: (skillId, cooldownHours) => {
           const { skillCooldowns } = get();
           const lastUsed = skillCooldowns[skillId] || 0;
           const now = Date.now();
           if (now - lastUsed >= cooldownHours * 3600000) {
               set({ skillCooldowns: { ...skillCooldowns, [skillId]: now } });
+              set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
               return true;
           }
           return false;
       },
-      updateQuizRecord: (lessonId, score, wrongIds, isFirstTime) => { /*...*/ },
-      correctMistake: (lessonId, questionId) => { /*...*/ },
-      addAnnotation: (lessonId, ann) => { /*...*/ },
-      removeAnnotation: (lessonId, id) => { /*...*/ },
-      joinClass: (code) => { /*...*/ return true; },
-      logout: () => { set({ isLoggedIn: false, role: 'guest', classId: null, id: '' }); },
-      toggleLike: (assetId) => { /*...*/ },
-      voteForAsset: (assetId) => { /*...*/ return false; }, 
-      checkAndClaimRewards: () => { /*...*/ return { verificationCount: 0, voteCount: 0, totalCoins: 0, totalXp: 0 }; },
-      consumeAiQuota: () => { /*...*/ return 'success'; },
 
+      updateQuizRecord: (lessonId, score, wrongIds, isFirstTime) => {
+          set(state => {
+              const prev = state.quizRecords[lessonId] || { 
+                  lessonId, highestScore: 0, isFinished: false, wrongQuestionIds: [], correctionCount: {} 
+              };
+              const newRecords = {
+                  ...state.quizRecords,
+                  [lessonId]: {
+                      ...prev,
+                      highestScore: Math.max(prev.highestScore, score),
+                      isFinished: true,
+                      wrongQuestionIds: wrongIds,
+                  }
+              };
+              return { quizRecords: newRecords };
+          });
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
+      },
+
+      correctMistake: (lessonId, questionId) => {
+          set(state => {
+              const record = state.quizRecords[lessonId];
+              if (!record) return {};
+              const newWrongIds = record.wrongQuestionIds.filter((id: string) => id !== questionId);
+              const newCount = (record.correctionCount[questionId] || 0) + 1;
+              const newRecords = {
+                  ...state.quizRecords,
+                  [lessonId]: {
+                      ...record,
+                      wrongQuestionIds: newWrongIds,
+                      correctionCount: { ...record.correctionCount, [questionId]: newCount }
+                  }
+              };
+              return { quizRecords: newRecords };
+          });
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
+      },
+
+      addAnnotation: (lessonId, ann) => {
+          set(state => {
+              const current = state.annotations[lessonId] || [];
+              const newAnn: Annotation = { ...ann, id: `ann-${Date.now()}`, type: 'student', createdAt: new Date().toISOString() };
+              return { annotations: { ...state.annotations, [lessonId]: [...current, newAnn] } };
+          });
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
+      },
+
+      removeAnnotation: (lessonId, id) => {
+          set(state => {
+              const current = state.annotations[lessonId] || [];
+              return { annotations: { ...state.annotations, [lessonId]: current.filter(a => a.id !== id) } };
+          });
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
+      },
+
+      joinClass: (code) => {
+          const targetClass = MOCK_CLASSES.find(c => c.code === code);
+          if (targetClass) {
+              set({ classId: targetClass.id });
+              alert(`🎉 成功加入班級：${targetClass.name}`);
+              return true;
+          } else {
+              alert('❌ 找不到此班級代碼，請重新確認。');
+              return false;
+          }
+      },
+      
+      // 🔥 Login Logic
       login: (role, username, userId) => {
-          const today = new Date().toISOString().split('T')[0];
-          const { dailyMission } = get();
-          const isNewDay = dailyMission.date !== today;
+          const state = get();
+          const { id: currentId, usersData } = state;
           
-          // Login logic
+          // 1. Save current user data before switching
+          let newUsersData = { ...usersData };
+          if (state.isLoggedIn && currentId) {
+              newUsersData[currentId] = extractUserData(state);
+          }
+
+          // 2. Prepare new user info
           const isTeacher = role === 'teacher';
           let targetId = userId || (isTeacher ? 't-001' : 's-0');
           let targetName = username || (isTeacher ? '孔丘' : '李白');
           let targetClassId = isTeacher ? null : 'class-101';
           let targetAvatar = isTeacher ? (targetId === 't-001' ? 'scholar_m' : 'scholar_f') : 'scholar_f';
-          let targetLevel = 1;
 
+          // Mock Data Lookup
           if (!isTeacher && userId) {
               const foundClass = MOCK_CLASSES.find(c => c.students.some(s => s.id === userId));
               const foundStudent = foundClass?.students.find(s => s.id === userId);
               if (foundClass && foundStudent) {
                   targetClassId = foundClass.id;
                   targetAvatar = foundStudent.avatar;
-                  targetLevel = foundStudent.level;
                   targetName = foundStudent.name;
               }
           }
 
-          set({ 
-              isLoggedIn: true, 
+          // 3. Load or Initialize Data
+          const savedData = newUsersData[targetId] || getDefaultUserData();
+
+          // 4. Daily Reset Logic
+          const today = new Date().toISOString().split('T')[0];
+          const isNewDay = savedData.lastLoginDate !== today;
+          
+          const finalData: UserSpecificData = {
+              ...savedData,
+              lastLoginDate: today,
+              aiDailyUsage: isNewDay ? 0 : savedData.aiDailyUsage,
+              dailyMission: isNewDay ? { 
+                  date: today, 
+                  progress: [], 
+                  isRewardClaimed: false 
+              } : savedData.dailyMission
+          };
+
+          // 5. Update State
+          set({
+              isLoggedIn: true,
               role: role,
               id: targetId,
               name: targetName,
               avatar: targetAvatar,
               title: isTeacher ? '至聖先師' : '詩仙',
               classId: targetClassId,
-              level: targetLevel,
-              // 若跨日，初始化新任務
-              dailyMission: isNewDay ? { 
-                  date: today, 
-                  progress: DAILY_ARTICLES.map(a => ({ articleId: a.id, isCompleted: false, hasError: false })),
-                  isRewardClaimed: false 
-              } : dailyMission,
-              // 重置 AI 配額
-              aiDailyUsage: isNewDay ? 0 : get().aiDailyUsage
+              usersData: { ...newUsersData, [targetId]: finalData }, // Update DB immediately
+              ...finalData // Load user data into current state
           });
-          
-          // 登入時不檢查連勝，改由頁面觸發 checkStreakStatus，以免登入流程太卡
       },
 
-      // 🔥 連勝邏輯：檢查是否斷簽
+      logout: () => { 
+          const state = get();
+          set({ 
+              isLoggedIn: false, 
+              role: 'guest', 
+              classId: null, 
+              id: '',
+              // Save current user on logout
+              usersData: { ...state.usersData, [state.id]: extractUserData(state) }
+          }); 
+      },
+
+      toggleLike: (assetId) => { /*...*/ },
+      voteForAsset: (assetId) => { /*...*/ return false; }, 
+      checkAndClaimRewards: () => { /*...*/ return { verificationCount: 0, voteCount: 0, totalCoins: 0, totalXp: 0 }; },
+      
+      consumeAiQuota: () => {
+          const { aiDailyUsage, aiMaxDailyFree, coins } = get();
+          const COST_PER_MSG = 10;
+          if (aiDailyUsage < aiMaxDailyFree) {
+              set({ aiDailyUsage: aiDailyUsage + 1 });
+              set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
+              return 'success';
+          }
+          if (coins >= COST_PER_MSG) {
+              set({ coins: coins - COST_PER_MSG, aiDailyUsage: aiDailyUsage + 1 });
+              set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
+              return 'paid_success';
+          }
+          return 'limit_reached';
+      },
+
+      // 🔥 Fixed Streak Logic with Type Safety
       checkStreakStatus: () => {
-          const { lastCompletedDate, streakDays, dailyMission } = get();
+          const { lastCompletedDate, streakDays } = get();
           const today = new Date();
           const yesterday = new Date(today);
           yesterday.setDate(yesterday.getDate() - 1);
           const yesterdayStr = yesterday.toISOString().split('T')[0];
           const todayStr = today.toISOString().split('T')[0];
 
-          // 如果上次完成日是昨天，或者今天(已完成)，則連勝安全
           if (lastCompletedDate === yesterdayStr || lastCompletedDate === todayStr) {
-              set({ streakStatus: 'active' });
+              const status: 'active' | 'broken' | 'repaired' = 'active';
+              set({ streakStatus: status });
               return;
           }
 
-          // 如果上次完成日更早，且 streakDays > 0，則斷簽
           if (lastCompletedDate < yesterdayStr && streakDays > 0) {
-              set({ streakStatus: 'broken' });
+              const status: 'active' | 'broken' | 'repaired' = 'broken';
+              set({ streakStatus: status });
+              set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
           }
       },
 
-      // 🔥 連勝邏輯：補簽
       repairStreak: () => {
           const { inventory } = get();
           const freezeCardIdx = inventory.findIndex(i => i.itemId === 'streak-freeze');
           
           if (freezeCardIdx >= 0 && inventory[freezeCardIdx].count > 0) {
-              // 消耗道具
               const newInv = [...inventory];
               newInv[freezeCardIdx].count -= 1;
               if (newInv[freezeCardIdx].count === 0) newInv.splice(freezeCardIdx, 1);
               
-              // 修復連勝 (將上次完成日強行改為昨天，這樣今天完成後就會 +1)
               const yesterday = new Date();
               yesterday.setDate(yesterday.getDate() - 1);
               
-              set({ 
+              const updates = { 
                   inventory: newInv,
                   lastCompletedDate: yesterday.toISOString().split('T')[0],
-                  streakStatus: 'repaired'
-              });
+                  streakStatus: 'repaired' as const // 🔥 Fix Type Mismatch
+              };
+              set(updates);
+              set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
               return true;
           }
           return false;
       },
 
-      // 🔥 連勝邏輯：接受斷簽
       acceptStreakBreak: () => {
-          set({ streakDays: 0, streakStatus: 'active' });
+          const updates = { streakDays: 0, streakStatus: 'active' as const };
+          set(updates);
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
       },
 
       markArticleError: (articleId) => {
@@ -300,6 +458,7 @@ export const useUserStore = create<UserState>()(
               newProgress.push({ articleId, isCompleted: false, hasError: true });
           }
           set({ dailyMission: { ...dailyMission, progress: newProgress } });
+          set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
       },
 
       completeDailyArticle: (articleId, isPerfect) => {
@@ -311,8 +470,11 @@ export const useUserStore = create<UserState>()(
               const bonus = isPerfect && !progressItem.hasError; 
               const finalXp = bonus ? Math.floor(baseXp * 1.2) : baseXp;
               
-              addXp(finalXp);
-              if (bonus) addCoins(20);
+              // Note: Manually update coins/xp here to group updates
+              const state = get();
+              const newXp = state.xp + finalXp;
+              const newCoins = state.coins + (bonus ? 20 : 0);
+              const newLevel = calculateLevelFromXp(newXp);
 
               const newProgress = dailyMission.progress.map(p => 
                   p.articleId === articleId ? { ...p, isCompleted: true } : p
@@ -321,7 +483,15 @@ export const useUserStore = create<UserState>()(
                   newProgress.push({ articleId, isCompleted: true, hasError: false });
               }
 
-              set({ dailyMission: { ...dailyMission, progress: newProgress } });
+              const updates = { 
+                  xp: newXp,
+                  level: newLevel,
+                  coins: newCoins,
+                  dailyMission: { ...dailyMission, progress: newProgress } 
+              };
+              
+              set(updates);
+              set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
               
               if (bonus) alert('🎉 完美通關！獲得 1.2倍 經驗值加成與 20 金幣！');
               else alert('👍 完成閱讀！獲得 50 XP。');
@@ -329,21 +499,20 @@ export const useUserStore = create<UserState>()(
       },
 
       claimDailyMissionReward: () => {
-          const { dailyMission, addCoins, streakDays } = get();
+          const { dailyMission, streakDays } = get();
           const today = new Date().toISOString().split('T')[0];
           
-          const allCompleted = DAILY_ARTICLES.every(a => 
-              dailyMission.progress.find(p => p.articleId === a.id)?.isCompleted
-          );
-
-          if (allCompleted && !dailyMission.isRewardClaimed) {
-              addCoins(100);
-              set({ 
+          if (!dailyMission.isRewardClaimed) {
+              const newCoins = get().coins + 100;
+              const updates = { 
+                  coins: newCoins,
                   dailyMission: { ...dailyMission, isRewardClaimed: true },
                   streakDays: streakDays + 1,
-                  lastCompletedDate: today, // 更新最後完成日
-                  streakStatus: 'active'
-              });
+                  lastCompletedDate: today, 
+                  streakStatus: 'active' as const
+              };
+              set(updates);
+              set(s => ({ usersData: { ...s.usersData, [s.id]: extractUserData(s) } }));
               alert(`🔥 簽到成功！連勝天數：${streakDays + 1} 天\n獲得 100 文心幣大紅包！`);
           }
       }
